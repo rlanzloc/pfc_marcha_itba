@@ -15,19 +15,36 @@ from scipy.signal import find_peaks
 from scipy.stats import pearsonr
 
 ############## CARGA DE DATOS ###################3
-c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/x_Cluster1.csv"
-c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/x_Cluster2.csv"
-c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/y_Cluster1.csv"
-c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/y_Cluster2.csv"
+import pandas as pd
 
-# Lee el archivo CSV y carga los parámetros
-xx_1 = pd.read_csv(c1_pathx, header=None).values.flatten()
-xx_2 = pd.read_csv(c2_pathx, header=None).values.flatten()
-yy_1 = pd.read_csv(c1_pathy, header=None).values.flatten()
-yy_2 = pd.read_csv(c2_pathy, header=None).values.flatten()
+# Definir la ruta base
+base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/calibracion_indiv/"
+
+# Lista de sensores y pies (ajusta esto según tus datos)
+sensor_pie_list = [
+    'Derecha_S1', 'Derecha_S2', 'Derecha_S3', 'Derecha_S4', 
+    'Derecha_S5', 'Derecha_S6', 'Derecha_S7', 'Derecha_S8',
+    'Izquierda_S1', 'Izquierda_S2', 'Izquierda_S3', 'Izquierda_S4', 
+    'Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7', 'Izquierda_S8'
+]
+
+# Diccionarios para almacenar los datos
+xx_data = {}  # Almacenará los valores de x para cada sensor
+yy_data = {}  # Almacenará los valores de y para cada sensor
+
+# Leer los archivos CSV para cada sensor
+for sensor_pie in sensor_pie_list:
+    # Construir las rutas de los archivos
+    x_path = f"{base_path}x_{sensor_pie}.csv"
+    y_path = f"{base_path}y_{sensor_pie}.csv"
+
+    # Leer los archivos CSV
+    xx_data[sensor_pie] = pd.read_csv(x_path, header=None).values.flatten()
+    yy_data[sensor_pie] = pd.read_csv(y_path, header=None).values.flatten()
+
 
 # Carpeta donde están los archivos
-folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas"
+folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/pasadas"
 
 # Listar todos los archivos CSV en la carpeta
 archivos_csv = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
@@ -45,7 +62,7 @@ raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 
 ################ PROCESAMIENTO DE DATOS #######################
 
-def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
+def procesar_plantillas(datos_derecha, datos_izquierda, xx_data, yy_data):
     def interp(df_list, frecuencia_hz=100):
         """
         Recorre una lista de DataFrames, chequea si los intervalos de tiempo son consistentes con la frecuencia deseada
@@ -109,8 +126,8 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
 
         return dfs_interpolados
 
-    def preproc_df(dataframes):
-        # Iterar sobre cada DataFrame en la lista
+    def preproc_df(dataframes, xx_data, yy_data):
+          # Iterar sobre cada DataFrame en la lista
         for df in dataframes:
             # Crear una copia del DataFrame para no modificar el original
             # Normalizar el primer valor de Tiempo a 0
@@ -120,11 +137,10 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
         processed_dataframes = []
         mV_dataframes = []
 
-        cluster_1 = ['Derecha_S1', 'Derecha_S2', 'Derecha_S3', 'Derecha_S4', 'Derecha_S5', 'Derecha_S6', 'Derecha_S8']
-        cluster_2 = ['Derecha_S7', 'Izquierda_S1', 'Izquierda_S2', 'Izquierda_S3', 'Izquierda_S4', 'Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7','Izquierda_S8']
-
-        yy_1_dict = dict(zip(xx_1, yy_1))
-        yy_2_dict = dict(zip(xx_2, yy_2))
+        # Crear diccionarios de calibración para cada sensor
+        calibration_dicts = {}
+        for sensor_pie in xx_data.keys():
+            calibration_dicts[sensor_pie] = dict(zip(xx_data[sensor_pie], yy_data[sensor_pie]))
 
         for df in dataframes:
             df_copy = df.copy()
@@ -140,13 +156,11 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
             df_mV = df_copy.map(lambda x: int((x / 1023) * 5000) if pd.notnull(x) else 0)
             mV_dataframes.append(df_mV)
 
-            # Procesar columnas según el cluster
+            # Procesar columnas según el sensor
             df_processed = df_mV.copy()
             for column in df_processed.columns:
-                if column in cluster_1:
-                    df_processed[column] = df_processed[column].map(lambda x: yy_1_dict.get(x, 0))
-                elif column in cluster_2:
-                    df_processed[column] = df_processed[column].map(lambda x: yy_2_dict.get(x, 0))
+                if column in calibration_dicts:
+                    df_processed[column] = df_processed[column].map(lambda x: calibration_dicts[column].get(x, 0))
             processed_dataframes.append(df_processed)
 
         return processed_dataframes, mV_dataframes
@@ -196,8 +210,8 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
     names_der = ['Derecha_S1', 'Derecha_S2', 'Derecha_S3', 'Derecha_S4', 'Derecha_S5', 'Derecha_S6', 'Derecha_S7', 'Derecha_S8']
     names_izq = ['Izquierda_S1', 'Izquierda_S2', 'Izquierda_S3', 'Izquierda_S4', 'Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7','Izquierda_S8']
 
-    dataframes_der, mV_der = preproc_df(raw_der_final)  # DataFrames de la derecha
-    dataframes_izq, mV_izq = preproc_df(raw_izq_final)
+    dataframes_der, mV_der = preproc_df(raw_der_final, xx_data, yy_data)  # DataFrames de la derecha
+    dataframes_izq, mV_izq = preproc_df(raw_izq_final, xx_data, yy_data)
 
     sampling_rate = 100  # Frecuencia de muestreo en Hz
     cutoff_frequency = 20  # Frecuencia de corte del filtro pasa bajos en Hz
@@ -278,7 +292,7 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
         
     return filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final
 
-filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_plantillas(raw_der, raw_izq, xx_1, xx_2, yy_1, yy_2)
+filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_plantillas(raw_der, raw_izq, xx_data, yy_data)
 
 
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
@@ -300,13 +314,7 @@ def calculo_bw(sums_der, sums_izq):
     for i, df in enumerate(sums_izq):
         if i ==5:
             prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
-        
-    # Lista para almacenar la suma de los promedios de BW derecho e izquierdo
-    BW_med = []
-    # Iterar sobre las posiciones de ambas listas y sumar los valores correspondientes
-    # for der, izq in zip(prom_der, prom_izq):
-    #     BW_med.append(der + izq)
-    
+            
     grf_der = []
     grf_izq = []
 
@@ -330,7 +338,6 @@ def calculo_bw(sums_der, sums_izq):
 
 ######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
 
-
 def subset(sums, t_inicio, t_fin):
     """
     Filtra los DataFrames de sums según un rango de tiempo.
@@ -352,8 +359,8 @@ def subset(sums, t_inicio, t_fin):
         sums_subset = sums[(sums.index >= t_inicio) & (sums.index <= t_fin)]
     
     return sums_subset
-    
-    return sums_der_filtrado, sums_izq_filtrado
+
+
 for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     tf_der = sum_der.index[-1]  # Último tiempo de sum_der
     tf_izq = sum_izq.index[-1]  # Último tiempo de sum_izq
@@ -364,11 +371,10 @@ for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     
     # Aplica subset y actualiza las listas originales
     sums_der[i] = subset(sum_der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
-    sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq)
-    
+    sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq
 
 ###################### CALCULO SUMS NORMALIZADO POR BW #####################
-grf_der, grf_izq = calculo_bw(sums_der, sums_izq)   
+grf_der, grf_izq = calculo_bw(sums_der, sums_izq)
 
 # Definir cantidad de pasadas
 num_pasadas = max(len(sums_der), len(sums_izq))
@@ -429,113 +435,3 @@ else:
     plt.tight_layout()
     plt.show()
 
-
-from analisis_cinetico_BW_calibracion_indiv import sums_der as sums_der_indiv, sums_izq as sums_izq_indiv
-from analisis_cinetico_BW_calibracion_indiv import grf_der as grf_der_indiv, grf_izq as grf_izq_indiv
-
-# Definir cantidad de pasadas
-num_pasadas_der = max(len(sums_der), len(sums_der_indiv))  # Máximo de pasadas para la derecha
-num_pasadas_izq = max(len(sums_izq), len(sums_izq_indiv))  # Máximo de pasadas para la izquierda
-
-# Evitar error si no hay datos
-if num_pasadas_der == 0 and num_pasadas_izq == 0:
-    print("No data to plot.")
-else:
-    # Crear figura y subplots para la derecha
-    if num_pasadas_der > 0:
-        fig_der, axes_der = plt.subplots(nrows=num_pasadas_der, ncols=1, figsize=(10, num_pasadas_der * 3), squeeze=False)
-        axes_der = axes_der.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la derecha
-        for i in range(num_pasadas_der):
-            if i < len(sums_der):
-                sums_der[i].plot(ax=axes_der[i], label="Derecha (curva prom)", color='b')
-            if i < len(sums_der_indiv):
-                sums_der_indiv[i].plot(ax=axes_der[i], label="Derecha (curvas indiv)", color='r', linestyle='--')
-            
-            
-            # Configurar el subplot
-            axes_der[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Derecha)')
-            axes_der[i].set_xlabel('Tiempo')
-            axes_der[i].set_ylabel('Valores')
-            axes_der[i].legend()
-            # axes_der[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-
-    # Crear figura y subplots para la izquierda
-    if num_pasadas_izq > 0:
-        fig_izq, axes_izq = plt.subplots(nrows=num_pasadas_izq, ncols=1, figsize=(10, num_pasadas_izq * 3), squeeze=False)
-        axes_izq = axes_izq.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la izquierda
-        for i in range(num_pasadas_izq):
-            if i < len(sums_izq):
-                sums_izq[i].plot(ax=axes_izq[i], label="Izquierda (actual)", color='g')
-            if i < len(sums_izq_indiv):
-                sums_izq_indiv[i].plot(ax=axes_izq[i], label="Izquierda (indiv)", color='r', linestyle='--')
-
-            # Configurar el subplot
-            axes_izq[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Izquierda)')
-            axes_izq[i].set_xlabel('Tiempo')
-            axes_izq[i].set_ylabel('Valores')
-            axes_izq[i].legend()
-            # axes_izq[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-        
-        
-# Definir cantidad de pasadas
-num_pasadas_der = max(len(sums_der), len(sums_der_indiv))  # Máximo de pasadas para la derecha
-num_pasadas_izq = max(len(sums_izq), len(sums_izq_indiv))  # Máximo de pasadas para la izquierda
-
-# Evitar error si no hay datos
-if num_pasadas_der == 0 and num_pasadas_izq == 0:
-    print("No data to plot.")
-else:
-    # Crear figura y subplots para la derecha
-    if num_pasadas_der > 0:
-        fig_der, axes_der = plt.subplots(nrows=num_pasadas_der, ncols=1, figsize=(10, num_pasadas_der * 3), squeeze=False)
-        axes_der = axes_der.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la derecha
-        for i in range(num_pasadas_der):
-            if i < len(sums_der):
-                grf_der[i].plot(ax=axes_der[i], label="Derecha (curva prom)", color='b')
-            if i < len(sums_der_indiv):
-                grf_der_indiv[i].plot(ax=axes_der[i], label="Derecha (curvas indiv)", color='r', linestyle='--')
-            
-            axes_der[i].axhline(y=1, color='black', linestyle='--', linewidth=1.6, label='Referencia (y=1)')
-            # Configurar el subplot
-            axes_der[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Derecha)')
-            axes_der[i].set_xlabel('Tiempo')
-            axes_der[i].set_ylabel('Valores')
-            axes_der[i].legend()
-            # axes_der[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-
-    # Crear figura y subplots para la izquierda
-    if num_pasadas_izq > 0:
-        fig_izq, axes_izq = plt.subplots(nrows=num_pasadas_izq, ncols=1, figsize=(10, num_pasadas_izq * 3), squeeze=False)
-        axes_izq = axes_izq.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la izquierda
-        for i in range(num_pasadas_izq):
-            if i < len(sums_izq):
-                grf_izq[i].plot(ax=axes_izq[i], label="Izquierda (actual)", color='g')
-            if i < len(sums_izq_indiv):
-                grf_izq_indiv[i].plot(ax=axes_izq[i], label="Izquierda (indiv)", color='r', linestyle='--')
-            axes_izq[i].axhline(y=1, color='black', linestyle=':', linewidth=1.6, label='Referencia (y=1)')
-            # Configurar el subplot
-            axes_izq[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Izquierda)')
-            axes_izq[i].set_xlabel('Tiempo')
-            axes_izq[i].set_ylabel('Valores')
-            axes_izq[i].legend()
-            # axes_izq[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
