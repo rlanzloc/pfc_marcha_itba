@@ -4,8 +4,8 @@ from datetime import datetime
 import threading
 
 # Inicializar DataFrame con 8 sensores más una columna de tiempo para cada pie
-df_derecha = pd.DataFrame(columns=["Tiempo"] + [f"Sensor {i+1}" for i in range(9)])
-df_izquierda = pd.DataFrame(columns=["Tiempo"] + [f"Sensor {i+1}" for i in range(9)])
+df_izquierda = pd.DataFrame(columns=['Hora', 'Tiempo'] + [f"Izquierda_S{i+1}" for i in range(8)])
+df_derecha = pd.DataFrame(columns=['Hora', 'Tiempo'] + [f"Derecha_S{i+1}" for i in range(8)])
 
 # Inicializar Arduinos (cambiar COM4 y COM6 si es necesario)
 try:
@@ -36,10 +36,26 @@ def leer_datos(arduino, dataframe, pie):
                 linea = arduino.readline().decode('utf-8').strip()
                 datos = linea.split(',')
                 if len(datos) == 9:
-                    tiempo = datetime.now().strftime('%H:%M:%S.%f')
-                    fila = [tiempo] + [int(valor) for valor in datos]
-                    dataframe.loc[len(dataframe)] = fila
-                    print(f"{pie} - {fila}")
+                    hora_actual = datetime.now().strftime('%H:%M:%S.%f')
+                    tiempo_arduino = datos[0]
+                    
+                    # Obtener valores de sensores
+                    valores_sensores = [int(valor) for valor in datos[1:9]]  # Sensores 1-8
+                    
+                    # Invertir orden SOLO para el pie izquierdo
+                    if pie == "Izquierda":
+                        valores_sensores = valores_sensores[::-1]  # Invierte la lista
+                    
+                    # Crear fila como diccionario
+                    nueva_fila = {'Hora': hora_actual, 'Tiempo': tiempo_arduino}
+                    for i in range(8):
+                        nueva_fila[f"{pie}_S{i+1}"] = valores_sensores[i]
+                    
+                    dataframe.loc[len(dataframe)] = nueva_fila
+                    
+                    # Imprimir datos (incluyendo el orden invertido si es izquierdo)
+                    print(f"{pie} - Hora: {hora_actual}, Tiempo: {tiempo_arduino}, Sensores: {valores_sensores}")
+                    
             except Exception as e:
                 print(f"Error al leer datos de {pie}: {e}")
 

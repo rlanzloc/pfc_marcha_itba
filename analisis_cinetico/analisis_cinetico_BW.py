@@ -15,10 +15,10 @@ from scipy.signal import find_peaks
 from scipy.stats import pearsonr
 
 ############## CARGA DE DATOS ###################3
-c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/x_Cluster1.csv"
-c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/x_Cluster2.csv"
-c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/y_Cluster1.csv"
-c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/clusters/y_Cluster2.csv"
+c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster1.csv"
+c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster2.csv"
+c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/y_Cluster1.csv"
+c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/y_Cluster2.csv"
 
 # Lee el archivo CSV y carga los parámetros
 xx_1 = pd.read_csv(c1_pathx, header=None).values.flatten()
