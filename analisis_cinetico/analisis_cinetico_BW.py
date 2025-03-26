@@ -14,6 +14,8 @@ import scipy.signal as signal
 from scipy.signal import find_peaks
 from scipy.stats import pearsonr
 
+plt.ioff()
+
 ############## CARGA DE DATOS ###################3
 c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster1.csv"
 c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster2.csv"
@@ -32,8 +34,12 @@ folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/p
 # Listar todos los archivos CSV en la carpeta
 archivos_csv = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
 
-# Leer los CSVs y almacenarlos en una lista
-dfs = [pd.read_csv(os.path.join(folder_path, f), delimiter=";") for f in archivos_csv]
+# Leer los CSVs y excluir la columna "Hora"
+dfs = []
+for f in archivos_csv:
+    df = pd.read_csv(os.path.join(folder_path, f), delimiter=";")
+    df = df.drop(columns=["Hora"], errors="ignore")  # Elimina "Hora" si existe
+    dfs.append(df)
 
 # Lista de nombres de archivos sin la extensión
 variables = [os.path.splitext(f)[0] for f in archivos_csv]
@@ -42,6 +48,9 @@ variables = [os.path.splitext(f)[0] for f in archivos_csv]
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
 raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 
+#Me quedo solo con una pasada y con la calibración estática para sacar el BW
+raw_izq = raw_izq[4:6]
+raw_der = raw_der[4:6]
 
 ################ PROCESAMIENTO DE DATOS #######################
 
@@ -276,36 +285,112 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
         
    
         
-    return filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final
+    return filt_der, filt_izq, sums_der, sums_izq, raw_der_proc, raw_izq_proc, raw_der_final, raw_izq_final, mV_der, mV_izq
 
-filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_plantillas(raw_der, raw_izq, xx_1, xx_2, yy_1, yy_2)
+filt_der, filt_izq, sums_der, sums_izq, raw_der_proc, raw_izq_proc, raw_der_final, raw_izq_final, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq, xx_1, xx_2, yy_1, yy_2)
+
+
+# Verificar datos
+if len(raw_der_proc) == 0 or len(raw_der_final) == 0:
+    print("No hay datos para graficar.")
+else:
+    sensores = [col for col in raw_der_proc[0].columns if col != "Tiempo"]  # Excluir columna tiempo
+    
+    for sensor in sensores:
+        plt.figure(figsize=(12, 5))
+        
+        # --- Ajustar tiempo SOLO para raw_der_proc (copia temporal) ---
+        df_proc_temp = raw_der_proc[0].copy()
+        df_proc_temp["Tiempo"] = (df_proc_temp["Tiempo"] - df_proc_temp["Tiempo"].iloc[0]) / 1000
+        
+        # --- Graficar ---
+        # 1. Datos crudos (con tiempo ajustado)
+        df_proc_temp.plot(
+            x="Tiempo",
+            y=sensor,
+            label="Datos crudos",
+            color="blue",
+            linestyle="--",
+            alpha=0.7,
+            ax=plt.gca(),
+        )
+        
+        # 2. Datos interpolados (YA tiene tiempo modificado)
+        raw_der_final[0].plot(
+            x="Tiempo",  # Usa la columna original (ya ajustada)
+            y=sensor,
+            label="Datos interpolados (100 Hz)",
+            color="red",
+            alpha=0.8,
+            ax=plt.gca(),
+        )
+        
+        # --- Personalizar gráfico ---
+        plt.title(f"Comparación Sensor {sensor}\nCrudo vs Interpolado")
+        plt.xlabel("Tiempo (segundos)")
+        plt.ylabel("Valor")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        
+        #plt.savefig(f"comparacion_{sensor}.png", dpi=300, bbox_inches="tight")
+        plt.close()
+        
+
+# Verificar que hay datos
+if len(filt_der) == 0 or len(filt_izq) == 0:
+    print("No hay datos para graficar.")
+else:
+    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 6))
+    
+    # Excluir columna 'tiempo' si existe
+    cols_der = [col for col in filt_der[0].columns]
+    filt_der[0][cols_der].plot(ax=ax1)
+    ax1.set_title('Pie DERECHO en KG (Pasada 1)')
+    
+    cols_izq = [col for col in filt_izq[0].columns]
+    filt_izq[0][cols_izq].plot(ax=ax2)
+    ax2.set_title('Pie IZQUIERDO en KG (Pasada 1)')
+    
+    plt.tight_layout()
+
+# Verificar que hay datos
+if len(mV_der) == 0 or len(mV_izq) == 0:
+    print("No hay datos para graficar.")
+else:
+    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 6))
+    
+    # Excluir columna 'tiempo' si existe
+    cols_der = [col for col in mV_der[0].columns]
+    mV_der[0][cols_der].plot(ax=ax1)
+    ax1.set_title('Pie DERECHO en mV (Pasada 1)')
+    
+    cols_izq = [col for col in mV_izq[0].columns]
+    mV_izq[0][cols_izq].plot(ax=ax2)
+    ax2.set_title('Pie IZQUIERDO en mV (Pasada 1)')
+    
+    plt.tight_layout()
 
 
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
 
 def calculo_bw(sums_der, sums_izq):
-    ti_der = 9.00
-    tf_der = 14.00
+    ti_der = 10.00
+    tf_der = 15.00
     
-    ti_izq = 22.00
-    tf_izq =27.00
+    ti_izq = 24.00
+    tf_izq =29.00
     
   
     # Iterar sobre los DataFrames en sums_der
     for i, df in enumerate(sums_der):
-        if i ==5:
+        if i == len(sums_der) - 1:  # Último índice de sums_der
             prom_der = df.loc[ti_der:tf_der].mean(numeric_only=True)  # BW derecho
 
     # Iterar sobre los DataFrames en sums_izq
     for i, df in enumerate(sums_izq):
-        if i ==5:
+        if i == len(sums_izq) - 1:  # Último índice de sums_izq
             prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
-        
-    # Lista para almacenar la suma de los promedios de BW derecho e izquierdo
-    BW_med = []
-    # Iterar sobre las posiciones de ambas listas y sumar los valores correspondientes
-    # for der, izq in zip(prom_der, prom_izq):
-    #     BW_med.append(der + izq)
     
     grf_der = []
     grf_izq = []
@@ -352,8 +437,7 @@ def subset(sums, t_inicio, t_fin):
         sums_subset = sums[(sums.index >= t_inicio) & (sums.index <= t_fin)]
     
     return sums_subset
-    
-    return sums_der_filtrado, sums_izq_filtrado
+
 for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     tf_der = sum_der.index[-1]  # Último tiempo de sum_der
     tf_izq = sum_izq.index[-1]  # Último tiempo de sum_izq
@@ -365,7 +449,7 @@ for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     # Aplica subset y actualiza las listas originales
     sums_der[i] = subset(sum_der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
     sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq)
-    
+
 
 ###################### CALCULO SUMS NORMALIZADO POR BW #####################
 grf_der, grf_izq = calculo_bw(sums_der, sums_izq)   
@@ -396,7 +480,6 @@ else:
         axes[i].legend()
 
     plt.tight_layout()
-    plt.show()
 
 # Definir cantidad de pasadas
 num_pasadas = max(len(grf_der), len(grf_izq))
@@ -418,7 +501,7 @@ else:
             grf_izq[i].plot(ax=axes[i], label="Izquierda", color='g')
 
         # Agregar línea horizontal en 1
-        axes[i].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+        axes[i].axhline(y=1, color='r', linestyle='--', label='Referencia BW')
 
         axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
         axes[i].set_xlabel('Tiempo')
@@ -427,9 +510,10 @@ else:
         axes[i].legend()
 
     plt.tight_layout()
-    plt.show()
 
+plt.show()
 
+'''
 from analisis_cinetico_BW_calibracion_indiv import sums_der as sums_der_indiv, sums_izq as sums_izq_indiv
 from analisis_cinetico_BW_calibracion_indiv import grf_der as grf_der_indiv, grf_izq as grf_izq_indiv
 
@@ -539,3 +623,4 @@ else:
 
         plt.tight_layout()
         plt.show()
+'''

@@ -18,7 +18,7 @@ from scipy.stats import pearsonr
 import pandas as pd
 
 # Definir la ruta base
-base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/calibracion_indiv/"
+base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv/"
 
 # Lista de sensores y pies (ajusta esto según tus datos)
 sensor_pie_list = [
@@ -44,7 +44,7 @@ for sensor_pie in sensor_pie_list:
 
 
 # Carpeta donde están los archivos
-folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba-1/analisis_cinetico/pasadas"
+folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas"
 
 # Listar todos los archivos CSV en la carpeta
 archivos_csv = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
@@ -59,6 +59,9 @@ variables = [os.path.splitext(f)[0] for f in archivos_csv]
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
 raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 
+#Me quedo solo con una pasada y con la calibración estática para sacar el BW
+raw_izq = raw_izq[4:6]
+raw_der = raw_der[4:6]
 
 ################ PROCESAMIENTO DE DATOS #######################
 
@@ -287,9 +290,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_data, yy_data):
 
         # Agregar el array resultante a la lista sumas_der
         sums_izq.append(sum_izq)
-        
-   
-        
     return filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final
 
 filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_plantillas(raw_der, raw_izq, xx_data, yy_data)
@@ -298,21 +298,21 @@ filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
 
 def calculo_bw(sums_der, sums_izq):
-    ti_der = 9.00
-    tf_der = 14.00
+    ti_der = 10.00
+    tf_der = 15.00
     
-    ti_izq = 22.00
-    tf_izq =27.00
+    ti_izq = 24.00
+    tf_izq =29.00
     
   
     # Iterar sobre los DataFrames en sums_der
     for i, df in enumerate(sums_der):
-        if i ==5:
+        if i == len(sums_der) - 1:
             prom_der = df.loc[ti_der:tf_der].mean(numeric_only=True)  # BW derecho
 
     # Iterar sobre los DataFrames en sums_izq
     for i, df in enumerate(sums_izq):
-        if i ==5:
+        if i == len(sums_izq) - 1:
             prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
             
     grf_der = []
@@ -333,7 +333,7 @@ def calculo_bw(sums_der, sums_izq):
         # Añadir a la lista de porcentajes
         grf_izq.append(porcentaje_izq)
     
-    return grf_der, grf_izq
+    return grf_der, grf_izq, prom_der, prom_izq
 
 
 ######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
@@ -374,7 +374,7 @@ for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq
 
 ###################### CALCULO SUMS NORMALIZADO POR BW #####################
-grf_der, grf_izq = calculo_bw(sums_der, sums_izq)
+grf_der, grf_izq, prom_der, prom_izq = calculo_bw(sums_der, sums_izq)
 
 # Definir cantidad de pasadas
 num_pasadas = max(len(sums_der), len(sums_izq))
@@ -404,6 +404,7 @@ else:
     plt.tight_layout()
     plt.show()
 
+
 # Definir cantidad de pasadas
 num_pasadas = max(len(grf_der), len(grf_izq))
 
@@ -411,27 +412,28 @@ num_pasadas = max(len(grf_der), len(grf_izq))
 if num_pasadas == 0:
     print("No data to plot.")
 else:
-    # Crear figura y subplots (una fila por pasada, dos señales en cada subplot)
-    fig, axes = plt.subplots(nrows=num_pasadas, ncols=1, figsize=(10, num_pasadas * 3), squeeze=False)
-    axes = axes.flatten()  # Convertir en un array 1D para acceso fácil
-
+    # Crear figura con subplots separados (2 columnas: izquierda y derecha)
+    fig, axes = plt.subplots(nrows=num_pasadas, ncols=2, figsize=(15, num_pasadas * 3), squeeze=False)
+    
     # Iterar sobre las pasadas
     for i in range(num_pasadas):
+        # --- Gráfico DERECHO (columna 0) ---
         if i < len(grf_der):
-            grf_der[i].plot(ax=axes[i], label="Derecha", color='b')
-
+            grf_der[i].plot(ax=axes[i, 0], color='b')
+            axes[i, 0].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+            axes[i, 0].set_title(f'GRF Derecha - Pasada N°{i+1}')
+            axes[i, 0].set_ylabel(f'%BW ({prom_der:.2f})')  # Leyenda personalizada
+            axes[i, 0].legend()
+        
+        # --- Gráfico IZQUIERDO (columna 1) ---
         if i < len(grf_izq):
-            grf_izq[i].plot(ax=axes[i], label="Izquierda", color='g')
+            grf_izq[i].plot(ax=axes[i, 1], color='g')
+            axes[i, 1].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+            axes[i, 1].set_title(f'GRF Izquierda - Pasada N°{i+1}')
+            axes[i, 1].set_ylabel(f'%BW ({prom_izq:.2f})')  # Leyenda personalizada
+            axes[i, 1].legend()
 
-        # Agregar línea horizontal en 1
-        axes[i].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
-
-        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
-        axes[i].set_xlabel('Tiempo')
-        axes[i].set_ylabel('Valores')
-        #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
-        axes[i].legend()
-
+    # Ajustar diseño y mostrar
     plt.tight_layout()
     plt.show()
 
