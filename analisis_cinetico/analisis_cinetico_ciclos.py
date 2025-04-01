@@ -11,8 +11,10 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Circle
 from scipy.signal import argrelextrema
 import scipy.signal as signal
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, peak_prominences
 from scipy.stats import pearsonr
+
+plt.ioff()
 
 ############## CARGA DE DATOS ###################3
 c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster1.csv"
@@ -42,28 +44,9 @@ variables = [os.path.splitext(f)[0] for f in archivos_csv]
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
 raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 
-
 ################ PROCESAMIENTO DE DATOS #######################
 
 def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
-
-    def corregir_saltos_grandes(df_list, max_salto=100, max_diferencia=10):
-        """
-        Detecta saltos grandes en los tiempos (más allá de un umbral) y los corrige,
-        asegurando que los tiempos sean consecutivos y respeten el intervalo del tiempo esperado de 10 ms.
-        Acepta una lista de DataFrames y aplica la corrección a cada uno.
-        """
-
-        # Iterar sobre cada DataFrame en la lista
-        for df in df_list:
-            # Crear una copia del DataFrame para no modificar el original
-            # Normalizar el primer valor de Tiempo a 0
-            # Restar el primer valor para que el primer tiempo sea 0
-            df['Tiempo'] = (df['Tiempo'] - df['Tiempo'].iloc[0])/1000
-
-        # Devolver la lista de DataFrames corregidos
-        return df_list
-
     def interp(df_list, frecuencia_hz=100):
         """
         Recorre una lista de DataFrames, chequea si los intervalos de tiempo son consistentes con la frecuencia deseada
@@ -128,6 +111,13 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
         return dfs_interpolados
 
     def preproc_df(dataframes):
+        # Iterar sobre cada DataFrame en la lista
+        for df in dataframes:
+            # Crear una copia del DataFrame para no modificar el original
+            # Normalizar el primer valor de Tiempo a 0
+            # Restar el primer valor para que el primer tiempo sea 0
+            df['Tiempo'] = (df['Tiempo'] - df['Tiempo'].iloc[0])/1000        
+
         processed_dataframes = []
         mV_dataframes = []
 
@@ -196,10 +186,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
 
         return filtered_data
     
-    # Aplicar las funciones a los DataFrames de las listas raw_der y raw_izq
-    raw_der_proc = corregir_saltos_grandes(raw_der, max_salto=100)
-    raw_izq_proc = corregir_saltos_grandes(raw_izq, max_salto=100)
-
     raw_der_proc = limpiar_valores_anomalos(raw_der)
     raw_izq_proc = limpiar_valores_anomalos(raw_izq)
 
@@ -288,17 +274,88 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
         # Agregar el array resultante a la lista sumas_der
         sums_izq.append(sum_izq)
         
-    print(raw_der_final)
+    return filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final, mV_der, mV_izq
+
+filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq, xx_1, xx_2, yy_1, yy_2)
+
+
+##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
+
+def calculo_bw(sums_der, sums_izq):
+    ti_der = 10.00
+    tf_der = 15.00
+    
+    ti_izq = 24.00
+    tf_izq =29.00
+  
+    # Iterar sobre los DataFrames en sums_der
+    for i, df in enumerate(sums_der):
+        if i == len(sums_der) - 1:  # Último índice de sums_der
+            prom_der = df.loc[ti_der:tf_der].mean(numeric_only=True)  # BW derecho
+
+    # Iterar sobre los DataFrames en sums_izq
+    for i, df in enumerate(sums_izq):
+        if i == len(sums_izq) - 1:  # Último índice de sums_izq
+            prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
+    
+    grf_der = []
+    grf_izq = []
+
+    # Iterar a través de los dataframes y los valores de BW_med correspondientes
+    for df in sums_der:
+        # Calcular el porcentaje de GRF respecto al BW correspondiente
+        porcentaje_der = df / prom_der
+
+        # Añadir a la lista de porcentajes
+        grf_der.append(porcentaje_der)
         
-    return filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final
+    for df in sums_izq:
+        # Calcular el porcentaje de GRF respecto al BW correspondiente
+        porcentaje_izq = df / prom_izq
 
-filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_plantillas(raw_der, raw_izq, xx_1, xx_2, yy_1, yy_2)
+        # Añadir a la lista de porcentajes
+        grf_izq.append(porcentaje_izq)
+    
+    return grf_der, grf_izq
 
+######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
+def subset(sums, t_inicio, t_fin):
+    """
+    Filtra los DataFrames de sums según un rango de tiempo.
+    
+    Parámetros:
+    - sums: Lista de DataFrames o un solo DataFrame.
+    - t_inicio: Valor mínimo de tiempo para el filtro.
+    - t_fin: Valor máximo de tiempo para el filtro.
+    
+    Retorna:
+    - sums_filtrado: Lista de DataFrames filtrados o un solo DataFrame filtrado.
+    """
+    # Verifica si sums es una lista de DataFrames o un solo DataFrame
+    if isinstance(sums, list):
+        # Si es una lista, aplica el filtrado a cada DataFrame en la lista
+        sums_subset = [df[(df.index >= t_inicio) & (df.index <= t_fin)] for df in sums]
+    else:
+        # Si es un solo DataFrame, aplica el filtrado directamente
+        sums_subset = sums[(sums.index >= t_inicio) & (sums.index <= t_fin)]
+    
+    return sums_subset
 
-import matplotlib.pyplot as plt
+for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
+    tf_der = sum_der.index[-1]  # Último tiempo de sum_der
+    tf_izq = sum_izq.index[-1]  # Último tiempo de sum_izq
+    
+    dif = tf_der - tf_izq  # Diferencia entre los últimos tiempos
+    sum_der.index = sum_der.index - dif  # Ajusta los índices de sum_der
+    ti = sum_izq.index[0]  # Primer tiempo de sum_izq
+    
+    # Aplica subset y actualiza las listas originales
+    sums_der[i] = subset(sum_der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
+    sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq)
+
 
 # Definir cantidad de pasadas
-num_pasadas = max(len(raw_der_final), len(raw_izq_final))
+num_pasadas = max(len(sums_der), len(sums_izq))
 
 # Evitar error si no hay datos
 if num_pasadas == 0:
@@ -310,71 +367,23 @@ else:
 
     # Iterar sobre las pasadas
     for i in range(num_pasadas):
-        if i < len(raw_der_final):
-            raw_der_final[i].plot(ax=axes[i], legend=False, color='b', alpha=0.6)
+        if i < len(sums_der):
+            sums_der[i].plot(ax=axes[i], label="Derecha", color='b')
 
-        if i < len(raw_izq_final):
-            raw_izq_final[i].plot(ax=axes[i], legend=False, color='g', alpha=0.6)
+        if i < len(sums_izq):
+            sums_izq[i].plot(ax=axes[i], label="Izquierda", color='g')
 
         axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
         axes[i].set_xlabel('Tiempo')
         axes[i].set_ylabel('Valores')
+        #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
+        axes[i].legend()
 
     plt.tight_layout()
-    plt.show()
-
-
-
-
-
-##################### CÁLCULO DE % BW #######################
-
-def calculo_bw(sums_der, sums_izq):
-    ti_der = 10.00
-    tf_der = 15.00
     
-    ti_izq = 5.00
-    tf_izq = 10.00
-    
-    # Listas para almacenar los promedios de BW1 y BW2
-    prom_der = []
-    prom_izq = []
-
-    # Iterar sobre los DataFrames en sums_der
-    for i, df in enumerate(sums_der):
-        prom_der.append(df.loc[ti_der:tf_der].mean(numeric_only=True))  # BW derecho
-
-    # Iterar sobre los DataFrames en sums_izq
-    for i, df in enumerate(sums_izq):
-        prom_izq.append(df.loc[ti_izq:tf_izq].mean(numeric_only=True))  # BW izquierdo
-        
-    # Lista para almacenar la suma de los promedios de BW derecho e izquierdo
-    BW_med = []
-    # Iterar sobre las posiciones de ambas listas y sumar los valores correspondientes
-    for der, izq in zip(prom_der, prom_izq):
-        BW_med.append(der + izq)
-    
-    grf_der = []
-    grf_izq = []
-
-    # Iterar a través de los dataframes y los valores de BW_med correspondientes
-    for df, BW in zip(sums_der, BW_med):
-        # Calcular el porcentaje de GRF respecto al BW correspondiente
-        porcentaje_der = df / BW
-
-        # Añadir a la lista de porcentajes
-        grf_der.append(porcentaje_der)
-        
-    for df, BW in zip(sums_izq, BW_med):
-        # Calcular el porcentaje de GRF respecto al BW correspondiente
-        porcentaje_izq = df / BW
-
-        # Añadir a la lista de porcentajes
-        grf_izq.append(porcentaje_izq)
-    
-    return grf_der, grf_izq
-
-grf_der, grf_izq = calculo_bw(sums_der, sums_izq)
+plt.show()
+###################### CALCULO SUMS NORMALIZADO POR BW #####################
+grf_der, grf_izq = calculo_bw(sums_der, sums_izq)   
 
 ############# SELECCIÓN DE CICLOS VÁLIDOS ##################
 def contacto_inicial(sums_der, sums_izq):
@@ -403,16 +412,6 @@ def contacto_inicial(sums_der, sums_izq):
 
 min_indices_der, min_indices_izq, min_tiempos_der, min_tiempos_izq = contacto_inicial(sums_der, sums_izq)
 
-def detect_two_peaks(signal_df, height_threshold):
-    """Detecta si una curva tiene exactamente dos picos significativos."""
-    signal_data = signal_df
-    peaks, properties = find_peaks(signal_data,
-                                   height=height_threshold,     # Altura mínima para considerar un pico 
-                                   )  # Prominencia mínima de los picos
-
-    # Verifica si hay exactamente dos picos prominentes
-    return len(peaks) == 2, peaks
-
 
 def compute_avg_cycle(cycles_indices, all_cycles):
     """Genera la curva promedio interpolando todas las curvas a 100 puntos."""
@@ -421,7 +420,6 @@ def compute_avg_cycle(cycles_indices, all_cycles):
     for i in cycles_indices], axis=0)
 
     return avg_cycle
-
 
 def exclude_by_shape(cycles_indices, all_cycles, avg_cycle):
     shape_diffs = []
@@ -432,141 +430,118 @@ def exclude_by_shape(cycles_indices, all_cycles, avg_cycle):
         shape_diff = np.linalg.norm(normalized_cycle - avg_cycle)
         shape_diffs.append(shape_diff)
     
-    p95_threshold = np.percentile(shape_diffs, 95)
+    p75_threshold = np.percentile(shape_diffs, 75)
     
-    excluded_shape = [[cycles_indices[i] for i in range(len(shape_diffs)) if shape_diffs[i] > p95_threshold]]  # Asegurar lista de listas
+    excluded_shape = [[cycles_indices[i] for i in range(len(shape_diffs)) if shape_diffs[i] > p75_threshold]]  # Asegurar lista de listas
     
     return excluded_shape
 
-def exclude_by_derivative(cycles_indices, all_cycles, threshold_slope):
-    """Descarta pasos con transiciones atípicas analizando la primera derivada."""
-    exclude_derivative = []
-    for i in cycles_indices:
-        normalized_cycle = np.interp(np.linspace(0, 100, num=100), np.linspace(0, 100, num=len(all_cycles[i-1])), all_cycles[i-1])
-        deriv = np.gradient(normalized_cycle)  # Primera derivada
-        if np.max(np.abs(deriv)) < threshold_slope:  # Si no hay cambios fuertes, descartar
-            exclude_derivative.append(i)
-    return exclude_derivative
+def find_cycles_to_exclude(pasadas, min_indices, threshold_time=0.20, threshold_slope=0.3):
+    """
+    Identifica ciclos anómalos en vGRF basándose en:
+    1. Duración atípica, 2. Estructura de picos/valles (vs promedio), 3. Distancia al promedio.
+    
+    Args:
+        pasadas: Lista de DataFrames con señales de vGRF.
+        min_indices: Lista de arrays con índices de mínimos.
+        threshold_time: Umbral para exclusión por duración (ej. 0.2 = 20% diferencia).
+        threshold_slope: Umbral para exclusión por derivada (pendiente).
+    
+    Returns:
+        tuple: (excluded_cycles, remaining_cycles, exclude_duration_list, exclude_shape_list)
+    """
+    num_pasadas = len(pasadas)
+    excluded_cycles = [[] for _ in range(num_pasadas)]
+    remaining_cycles = [[] for _ in range(num_pasadas)]
+    exclude_duration_list = [[] for _ in range(num_pasadas)]
+    exclude_shape_list = [[] for _ in range(num_pasadas)]
 
-
-def find_cycles_to_exclude(pasadas, min_indices, threshold_time=0.15, threshold_slope=0.10, height_threshold=15):
-    excluded_cycles = [[] for _ in range(len(pasadas))]  # Lista de exclusión por pasada
-    remaining_cycles = [[] for _ in range(len(pasadas))]  # Lista de ciclos restantes por pasada 
-    detected_peaks = [[] for _ in range(len(pasadas))]  # Lista para almacenar los picos detectados por pasada
-
-    for i, (pasada, mins) in enumerate(zip(pasadas, min_indices)):  
+    for i, (pasada, mins) in enumerate(zip(pasadas, min_indices)):
         if len(mins) < 2:
             continue
+            
+        # 1. Obtener todos los ciclos entre mínimos consecutivos
+        all_cycles = [pasada.iloc[mins[i]:mins[i+1]].values.flatten() for i in range(len(mins)-1)]
         
-        # Obtener todos los ciclos en la pasada
-        all_cycles = [pasada.iloc[mins[i]:mins[i + 1]].values.flatten() for i in range(len(mins) - 1)]
-        
-        # Calcular las duraciones de los ciclos
-        durations = [pasada.index[mins[i + 1]] - pasada.index[mins[i]] for i in range(len(mins) - 1)]
+        # 2. Exclusión por duración atípica
+        durations = [pasada.index[mins[i+1]] - pasada.index[mins[i]] for i in range(len(mins)-1)]
         avg_duration = np.mean(durations)
-        duration_diffs = np.abs((durations - avg_duration) / avg_duration)
-
-        # Excluir ciclos con duraciones muy diferentes al promedio
-        exclude_duration = [i + 1 for i in np.where(duration_diffs > threshold_time)[0]]
+        duration_diffs = np.abs((durations - avg_duration)/avg_duration)
+        exclude_duration = [i+1 for i in np.where(duration_diffs > threshold_time)[0]]
         excluded_cycles[i].extend(exclude_duration)
-
-        # Obtener ciclos restantes tras la exclusión por duración
-        remaining = [i + 1 for i in range(len(durations)) if i + 1 not in exclude_duration]
-
-        # Filtrado por morfología (forma)
-        avg_cycle = compute_avg_cycle(remaining, all_cycles)
-        exclude_shape = exclude_by_shape(remaining, all_cycles, avg_cycle)
-
-        # Aplanar y agregar exclusiones de forma
-        exclude_shape = [i for sublist in exclude_shape for i in sublist]
-        excluded_cycles[i].extend(exclude_shape)
-
-        # Actualizar ciclos restantes tras la exclusión por forma
-        remaining = [i for i in remaining if i not in exclude_shape]
-
-        # Filtrado por derivada
-        exclude_derivative = exclude_by_derivative(remaining, all_cycles, threshold_slope)
-        excluded_cycles[i].extend(exclude_derivative)
-       
-        # Filtrado adicional por picos: detectar ciclos con más de dos picos prominentes
-        peaks_for_this_pasa = []
-        for cycle_index in remaining[:]:
-            start_index = mins[cycle_index - 1]  # Ajustar índice según el ciclo
-            end_index = mins[cycle_index]  # Ajustar índice según el ciclo
-            signal_df = pasada.iloc[start_index:end_index].values.flatten()  # Extraemos el ciclo
-
-            is_valid_peak, peaks = detect_two_peaks(signal_df, height_threshold)
-            if is_valid_peak:
-                peaks_for_this_pasa.append(peaks)  # Guardamos los picos detectados
-            else:
-                excluded_cycles[i].append(cycle_index)  # Si no tiene exactamente dos picos, lo excluimos
+        exclude_duration_list[i] = exclude_duration
         
-        # Almacenamos los picos detectados para esta pasada
-        detected_peaks[i] = peaks_for_this_pasa
+        remaining = [i+1 for i in range(len(durations)) if (i+1) not in exclude_duration]
+
+        # 3. Exclusión por forma (comparación con estructura del promedio)
+        if remaining:
+            avg_cycle = compute_avg_cycle(remaining, all_cycles)
+            
+            # A. Encontrar picos/valles del PROMEDIO como referencia
+            peaks_avg, _ = find_peaks(avg_cycle, height=0.6*np.max(avg_cycle), prominence=0.5)
+            valleys_avg, _ = find_peaks(-avg_cycle, height=0.6*np.max(avg_cycle), prominence=0.5)
+            
+            # B. Umbrales para ciclos individuales (basados en el promedio)
+            height_threshold = 0.5 * np.max(avg_cycle)
+            prominence_threshold = 0.4
+            distance_threshold = len(avg_cycle)//4  # 25% del ciclo
+            
+            # C. Exclusión por distancia al promedio (método original)
+            excluded_by_distance = exclude_by_shape(remaining, all_cycles, avg_cycle)[0]
+            
+            # D. Exclusión por estructura de picos/valles (vs promedio)
+            excluded_by_structure = []
+            for idx in remaining:
+                cycle = all_cycles[idx-1]
+                normalized_cycle = np.interp(np.linspace(0, 100, 100), np.linspace(0, 100, len(cycle)), cycle)
+                
+                # Detectar picos y valles del ciclo actual
+                peaks, _ = find_peaks(normalized_cycle, 
+                                    height=height_threshold,
+                                    prominence=prominence_threshold,
+                                    distance=distance_threshold)
+                valleys, _ = find_peaks(-normalized_cycle,
+                                      height=height_threshold,
+                                      prominence=prominence_threshold,
+                                      distance=distance_threshold)
+                
+                # Condición: Misma cantidad de picos/valles que el promedio
+                if not (len(peaks) == len(peaks_avg) and len(valleys) == len(valleys_avg)):
+                    excluded_by_structure.append(idx)
+            
+            # Combinar ambos criterios (excluir si falla en cualquiera)
+            exclude_shape = list(set(excluded_by_distance + excluded_by_structure))
+            excluded_cycles[i].extend(exclude_shape)
+            exclude_shape_list[i] = exclude_shape
+            remaining = [idx for idx in remaining if idx not in exclude_shape]
+
+        # 4. Ciclos restantes válidos
+        remaining_cycles[i] = remaining
         
-        # Los ciclos que no fueron excluidos por ningún método son los definitivos restantes
-        remaining = [cycle for cycle in remaining if cycle not in excluded_cycles[i]]
-        remaining_cycles[i].extend(remaining)  # Ciclos restantes
-    
-    return excluded_cycles, remaining_cycles, detected_peaks
-
-
-def subset(sums_der, sums_izq, t_inicio, t_fin):
-    """
-    Filtra los DataFrames de sums_der y sums_izq según un rango de tiempo.
-    
-    Parámetros:
-    - sums_der: Lista de DataFrames del lado derecho.
-    - sums_izq: Lista de DataFrames del lado izquierdo.
-    - t_inicio: Valor mínimo de tiempo para el filtro.
-    - t_fin: Valor máximo de tiempo para el filtro.
-    
-    Retorna:
-    - sums_der_filtrado: Lista de DataFrames filtrados para sums_der.
-    - sums_izq_filtrado: Lista de DataFrames filtrados para sums_izq.
-    """
-    sums_der_filtrado = [df[(df.index >= t_inicio) & (df.index <= t_fin)] for df in sums_der]
-    sums_izq_filtrado = [df[(df.index >= t_inicio) & (df.index <= t_fin)] for df in sums_izq]
-    
-    return sums_der_filtrado, sums_izq_filtrado
-
-for sum_der, sum_izq in zip(sums_der, sums_izq):
-    tiempo_final_der = sum_der.index[-1]
-    tiempo_final_izq = sum_izq.index[-1]
-    
-    dif = tiempo_final_der - tiempo_final_izq
-    sum_der.index = sum_der.index - dif
-    ti = sum_izq.index[0]
-    sum_der, sum_izq = subset(sums_der, sums_izq, ti, tiempo_final_izq)
-    
-    
-print(sums_der[0])
-print(sums_izq[0])
-
-
+    return excluded_cycles, remaining_cycles, exclude_duration_list, exclude_shape_list
 
 
 # Definir el rango de tiempo deseado
-t_inicio = 20  # Cambia estos valores según tu necesidad
+t_inicio = 15  # Cambia estos valores según tu necesidad
 t_fin = 30
 
 # Definir el subset
-sums_der_subset, sums_izq_subset = subset(sums_der, sums_izq, t_inicio, t_fin)
+sums_der_pasadas = [sums_der[0], sums_der[4]]
+sums_izq_pasadas = [sums_izq[0], sums_izq[4]]
+
+sums_der_subset = subset(sums_der_pasadas, t_inicio, t_fin)
+sums_izq_subset = subset(sums_izq_pasadas, t_inicio, t_fin)
 
 min_indices_subset_der, min_indices_subset_izq, min_tiempos_subset_der, min_tiempos_subset_izq = contacto_inicial(sums_der_subset, sums_izq_subset)
 
-#excluded_cycles_der, remaining_cycles_der, detected_peaks_der  = find_cycles_to_exclude(sums_der_subset, min_indices_subset_der, threshold_time=0.15, threshold_slope=0.10)
-#excluded_cycles_izq, remaining_cycles_izq, detected_peaks_izq  = find_cycles_to_exclude(sums_izq_subset, min_indices_subset_izq, threshold_time=0.15, threshold_slope=0.10)
+excluded_cycles_der, remaining_cycles_der, exclude_duration_der, exclude_shape_der = find_cycles_to_exclude(sums_der_subset, min_indices_subset_der, threshold_time=0.25)
+excluded_cycles_izq, remaining_cycles_izq, exclude_duration_izq, exclude_shape_izq = find_cycles_to_exclude(sums_izq_subset, min_indices_subset_izq, threshold_time=0.25)
 
-#print(excluded_cycles_der)
-#print(remaining_cycles_der)
+print(excluded_cycles_der)
+print(excluded_cycles_izq)
 
-#print(excluded_cycles_izq)
-#print(remaining_cycles_izq)
-
-'''
 # Crear una figura con subgráficos (una fila para cada lista)
-fig, axes = plt.subplots(2, len(sums_der), figsize=(15, 8), sharex=True)
+fig, axes = plt.subplots(2, len(sums_der_subset), figsize=(15, 8), sharex=True)
 
 # Graficar los datos derechos
 for i, (df, min_idx, min_tiempo) in enumerate(zip(sums_der_subset, min_indices_subset_der, min_tiempos_subset_der)):
@@ -575,7 +550,7 @@ for i, (df, min_idx, min_tiempo) in enumerate(zip(sums_der_subset, min_indices_s
 
     # Graficar los mínimos
     axes[0, i].scatter(min_tiempo, df.iloc[min_idx], color='b', zorder=3)
-
+    '''
     # Graficar los picos detectados
     for peaks in detected_peaks_der[i]:
         # Obtener los valores de los picos usando los índices
@@ -583,7 +558,7 @@ for i, (df, min_idx, min_tiempo) in enumerate(zip(sums_der_subset, min_indices_s
         
         # Graficar los picos sobre la señal
         axes[0, i].scatter(df.index[peaks], peak_values, color='r',  zorder=3)
-
+    '''
     axes[0, i].set_title(f"Señal Derecha {i+1}")
     axes[0, i].legend()
 
@@ -594,7 +569,7 @@ for i, (df, min_idx, min_tiempo) in enumerate(zip(sums_izq_subset, min_indices_s
 
     # Graficar los mínimos
     axes[1, i].scatter(min_tiempo, df.iloc[min_idx], color='b', zorder=3)
-
+    '''
     # Graficar los picos detectados
     for peaks in detected_peaks_izq[i]:
         # Obtener los valores de los picos usando los índices
@@ -602,12 +577,13 @@ for i, (df, min_idx, min_tiempo) in enumerate(zip(sums_izq_subset, min_indices_s
         
         # Graficar los picos sobre la señal
         axes[1, i].scatter(df.index[peaks], peak_values, color='r', zorder=3)
-
+    '''
     axes[1, i].set_title(f"Señal Izquierda {i+1}")
     axes[1, i].legend()
 
 plt.tight_layout()
 plt.show()
+
 
 '''
 ################### CÁLCULO DE COP #######################
@@ -624,6 +600,7 @@ coord_sensores = [
 
 # Crear un DataFrame a partir de la lista de listas
 df_coord = pd.DataFrame(coord_sensores, columns=['SENSOR', 'X', 'Y'])
+
 
 def calcular_COP(fuerza_sensores, vgrf, coordenadas_iniciales):
     """
@@ -674,7 +651,7 @@ def calcular_COP(fuerza_sensores, vgrf, coordenadas_iniciales):
     return COPx_list, COPy_list
 
 COPx_der, COPy_der = calcular_COP(filt_der, sums_der, df_coord)
-
+'''
 '''
 # Crear la grilla
 fig, ax = plt.subplots(figsize=(10, 8))
@@ -732,7 +709,7 @@ plt.grid(True)
 
 plt.show()
 '''
-
+'''
 # Definir cantidad de pasadas
 num_pasadas = max(len(sums_der), len(sums_izq))
 
@@ -793,3 +770,4 @@ else:
 
     plt.tight_layout()
     plt.show()
+'''

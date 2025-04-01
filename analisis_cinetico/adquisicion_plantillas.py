@@ -90,5 +90,5 @@ if 'arduino_izquierda' in globals() and arduino_izquierda.is_open:
     arduino_izquierda.close()
 
 # Guardar los datos en archivos CSV
-df_derecha.to_csv('datos_derecha_PESO.csv', index=False)
-df_izquierda.to_csv('datos_izquierda_PESO.csv', index=False)
+df_derecha.to_csv('datos_derecha_sin_proteccion.csv', index=False)
+df_izquierda.to_csv('datos_izquierda_sin_proteccion.csv', index=False)

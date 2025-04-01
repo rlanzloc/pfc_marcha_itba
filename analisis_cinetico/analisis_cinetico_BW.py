@@ -31,14 +31,27 @@ yy_2 = pd.read_csv(c2_pathy, header=None).values.flatten()
 # Carpeta donde están los archivos
 folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas"
 
-# Listar todos los archivos CSV en la carpeta
+# Función para detectar el delimitador
+def detect_delimiter(file_path, sample_size=5):
+    delimiters = [',', ';', '\t']
+    with open(file_path, 'r') as f:
+        sample = [f.readline() for _ in range(sample_size)]
+    
+    for delimiter in delimiters:
+        counts = [line.count(delimiter) for line in sample]
+        if all(count == counts[0] for count in counts) and counts[0] > 0:
+            return delimiter
+    return ','  # Por defecto si no se detecta
+
+# Listar y leer archivos
+dfs = []
 archivos_csv = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
 
-# Leer los CSVs y excluir la columna "Hora"
-dfs = []
 for f in archivos_csv:
-    df = pd.read_csv(os.path.join(folder_path, f), delimiter=";")
-    df = df.drop(columns=["Hora"], errors="ignore")  # Elimina "Hora" si existe
+    file_path = os.path.join(folder_path, f)
+    delimiter = detect_delimiter(file_path)
+    df = pd.read_csv(file_path, delimiter=delimiter)
+    df = df.drop(columns=["Hora"], errors="ignore")
     dfs.append(df)
 
 # Lista de nombres de archivos sin la extensión
@@ -48,9 +61,14 @@ variables = [os.path.splitext(f)[0] for f in archivos_csv]
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
 raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 
+# Obtener los nombres en el mismo orden que los DataFrames filtrados
+nombres_izq = [name for name in variables if "izquierda" in name.lower()]
+nombres_der = [name for name in variables if "derecha" in name.lower()]
+
 #Me quedo solo con una pasada y con la calibración estática para sacar el BW
-raw_izq = raw_izq[4:6]
-raw_der = raw_der[4:6]
+raw_izq = raw_izq[4:9]
+raw_der = raw_der[4:9]
+
 
 ################ PROCESAMIENTO DE DATOS #######################
 
@@ -290,87 +308,81 @@ def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
 filt_der, filt_izq, sums_der, sums_izq, raw_der_proc, raw_izq_proc, raw_der_final, raw_izq_final, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq, xx_1, xx_2, yy_1, yy_2)
 
 
-# Verificar datos
-if len(raw_der_proc) == 0 or len(raw_der_final) == 0:
-    print("No hay datos para graficar.")
-else:
-    sensores = [col for col in raw_der_proc[0].columns if col != "Tiempo"]  # Excluir columna tiempo
-    
-    for sensor in sensores:
-        plt.figure(figsize=(12, 5))
-        
-        # --- Ajustar tiempo SOLO para raw_der_proc (copia temporal) ---
-        df_proc_temp = raw_der_proc[0].copy()
-        df_proc_temp["Tiempo"] = (df_proc_temp["Tiempo"] - df_proc_temp["Tiempo"].iloc[0]) / 1000
-        
-        # --- Graficar ---
-        # 1. Datos crudos (con tiempo ajustado)
-        df_proc_temp.plot(
-            x="Tiempo",
-            y=sensor,
-            label="Datos crudos",
-            color="blue",
-            linestyle="--",
-            alpha=0.7,
-            ax=plt.gca(),
-        )
-        
-        # 2. Datos interpolados (YA tiene tiempo modificado)
-        raw_der_final[0].plot(
-            x="Tiempo",  # Usa la columna original (ya ajustada)
-            y=sensor,
-            label="Datos interpolados (100 Hz)",
-            color="red",
-            alpha=0.8,
-            ax=plt.gca(),
-        )
-        
-        # --- Personalizar gráfico ---
-        plt.title(f"Comparación Sensor {sensor}\nCrudo vs Interpolado")
-        plt.xlabel("Tiempo (segundos)")
-        plt.ylabel("Valor")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        
-        #plt.savefig(f"comparacion_{sensor}.png", dpi=300, bbox_inches="tight")
-        plt.close()
-        
+# ==================================================
+# GRÁFICOS DE mV
+# ==================================================
 
-# Verificar que hay datos
-if len(filt_der) == 0 or len(filt_izq) == 0:
-    print("No hay datos para graficar.")
+# Pie DERECHO - mV
+if len(mV_der) == 0:
+    print("No hay datos de PIE DERECHO (mV) para graficar.")
 else:
-    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 6))
+    fig_der_mv, axes = plt.subplots(len(mV_der), 1, figsize=(12, 2.5 * len(mV_der)))
+    if len(mV_der) == 1:
+        axes = [axes]
     
-    # Excluir columna 'tiempo' si existe
-    cols_der = [col for col in filt_der[0].columns]
-    filt_der[0][cols_der].plot(ax=ax1)
-    ax1.set_title('Pie DERECHO en KG (Pasada 1)')
-    
-    cols_izq = [col for col in filt_izq[0].columns]
-    filt_izq[0][cols_izq].plot(ax=ax2)
-    ax2.set_title('Pie IZQUIERDO en KG (Pasada 1)')
+    for i, df in enumerate(mV_der):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i], legend=False)
+        axes[i].set_title(f'Pie DERECHO en mV - Pasada {i+1}', pad=10)
     
     plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    plt.show()
 
-# Verificar que hay datos
-if len(mV_der) == 0 or len(mV_izq) == 0:
-    print("No hay datos para graficar.")
+# Pie IZQUIERDO - mV
+if len(mV_izq) == 0:
+    print("No hay datos de PIE IZQUIERDO (mV) para graficar.")
 else:
-    fig, (ax1, ax2) = plt.subplots(nrows=2, ncols=1, figsize=(10, 6))
+    fig_izq_mv, axes = plt.subplots(len(mV_izq), 1, figsize=(12, 2.5 * len(mV_izq)))
+    if len(mV_izq) == 1:
+        axes = [axes]
     
-    # Excluir columna 'tiempo' si existe
-    cols_der = [col for col in mV_der[0].columns]
-    mV_der[0][cols_der].plot(ax=ax1)
-    ax1.set_title('Pie DERECHO en mV (Pasada 1)')
-    
-    cols_izq = [col for col in mV_izq[0].columns]
-    mV_izq[0][cols_izq].plot(ax=ax2)
-    ax2.set_title('Pie IZQUIERDO en mV (Pasada 1)')
+    for i, df in enumerate(mV_izq):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i], legend=False)
+        axes[i].set_title(f'Pie IZQUIERDO en mV - Pasada {i+1}', pad=10)
     
     plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    plt.show()
 
+# ==================================================
+# GRÁFICOS DE FUERZA (KG)
+# ==================================================
+
+# Pie DERECHO - KG
+if len(filt_der) == 0:
+    print("No hay datos de PIE DERECHO (KG) para graficar.")
+else:
+    fig_der_kg, axes = plt.subplots(len(filt_der), 1, figsize=(12, 2.5 * len(filt_der)))
+    if len(filt_der) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(filt_der):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i], legend=False)
+        axes[i].set_title(f'Pie DERECHO en KG - Pasada {i+1}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    plt.show()
+
+# Pie IZQUIERDO - KG
+if len(filt_izq) == 0:
+    print("No hay datos de PIE IZQUIERDO (KG) para graficar.")
+else:
+    fig_izq_kg, axes = plt.subplots(len(filt_izq), 1, figsize=(12, 2.5 * len(filt_izq)))
+    if len(filt_izq) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(filt_izq):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i], legend=False)
+        axes[i].set_title(f'Pie IZQUIERDO en KG - Pasada {i+1}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    plt.show()
 
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
 
@@ -623,4 +635,48 @@ else:
 
         plt.tight_layout()
         plt.show()
-'''
+'''# Verificar datos
+if len(raw_der_proc) == 0 or len(raw_der_final) == 0:
+    print("No hay datos para graficar.")
+else:
+    sensores = [col for col in raw_der_proc[0].columns if col != "Tiempo"]  # Excluir columna tiempo
+    
+    for sensor in sensores:
+        plt.figure(figsize=(12, 5))
+        
+        # --- Ajustar tiempo SOLO para raw_der_proc (copia temporal) ---
+        df_proc_temp = raw_der_proc[0].copy()
+        df_proc_temp["Tiempo"] = (df_proc_temp["Tiempo"] - df_proc_temp["Tiempo"].iloc[0]) / 1000
+        
+        # --- Graficar ---
+        # 1. Datos crudos (con tiempo ajustado)
+        df_proc_temp.plot(
+            x="Tiempo",
+            y=sensor,
+            label="Datos crudos",
+            color="blue",
+            linestyle="--",
+            alpha=0.7,
+            ax=plt.gca(),
+        )
+        
+        # 2. Datos interpolados (YA tiene tiempo modificado)
+        raw_der_final[0].plot(
+            x="Tiempo",  # Usa la columna original (ya ajustada)
+            y=sensor,
+            label="Datos interpolados (100 Hz)",
+            color="red",
+            alpha=0.8,
+            ax=plt.gca(),
+        )
+        
+        # --- Personalizar gráfico ---
+        plt.title(f"Comparación Sensor {sensor}\nCrudo vs Interpolado")
+        plt.xlabel("Tiempo (segundos)")
+        plt.ylabel("Valor")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        
+        #plt.savefig(f"comparacion_{sensor}.png", dpi=300, bbox_inches="tight")
+        plt.close()
