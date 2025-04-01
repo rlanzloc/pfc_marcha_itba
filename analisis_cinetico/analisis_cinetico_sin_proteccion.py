@@ -17,10 +17,10 @@ from scipy.stats import pearsonr
 plt.ioff()
 
 ############## CARGA DE DATOS ###################3
-c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster1.csv"
-c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/x_Cluster2.csv"
-c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/y_Cluster1.csv"
-c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters/y_Cluster2.csv"
+c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/x_Cluster1_SIN.csv"
+c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/x_Cluster2_SIN.csv"
+c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/y_Cluster1_SIN.csv"
+c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/y_Cluster2_SIN.csv"
 
 # Lee el archivo CSV y carga los parámetros
 xx_1 = pd.read_csv(c1_pathx, header=None).values.flatten()
@@ -66,8 +66,8 @@ nombres_izq = [name for name in variables if "izquierda" in name.lower()]
 nombres_der = [name for name in variables if "derecha" in name.lower()]
 
 #Me quedo solo con una pasada y con la calibración estática para sacar el BW
-raw_izq = raw_izq[4:9]
-raw_der = raw_der[4:9]
+raw_izq = raw_izq[6:9]
+raw_der = raw_der[6:9]
 
 
 ################ PROCESAMIENTO DE DATOS #######################
@@ -388,11 +388,11 @@ else:
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
 
 def calculo_bw(sums_der, sums_izq):
-    ti_der = 5.00
-    tf_der = 30.00
+    ti_der = 10.00
+    tf_der = 20.00
     
-    ti_izq = 5.00
-    tf_izq = 30.00
+    ti_izq = 10.00
+    tf_izq = 20.00
     
   
     # Iterar sobre los DataFrames en sums_der
@@ -405,7 +405,9 @@ def calculo_bw(sums_der, sums_izq):
         if i == len(sums_izq) - 2:  # Último índice de sums_izq
             prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
     
-    BW = prom_der + prom_izq
+    BW = 51
+    print(prom_der)
+    print(prom_izq)
     
     grf_der = []
     grf_izq = []
@@ -429,7 +431,6 @@ def calculo_bw(sums_der, sums_izq):
 
 
 ######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
-
 
 def subset(sums, t_inicio, t_fin):
     """
@@ -527,159 +528,3 @@ else:
     plt.tight_layout()
 
 plt.show()
-
-'''
-from analisis_cinetico_BW_calibracion_indiv import sums_der as sums_der_indiv, sums_izq as sums_izq_indiv
-from analisis_cinetico_BW_calibracion_indiv import grf_der as grf_der_indiv, grf_izq as grf_izq_indiv
-
-# Definir cantidad de pasadas
-num_pasadas_der = max(len(sums_der), len(sums_der_indiv))  # Máximo de pasadas para la derecha
-num_pasadas_izq = max(len(sums_izq), len(sums_izq_indiv))  # Máximo de pasadas para la izquierda
-
-# Evitar error si no hay datos
-if num_pasadas_der == 0 and num_pasadas_izq == 0:
-    print("No data to plot.")
-else:
-    # Crear figura y subplots para la derecha
-    if num_pasadas_der > 0:
-        fig_der, axes_der = plt.subplots(nrows=num_pasadas_der, ncols=1, figsize=(10, num_pasadas_der * 3), squeeze=False)
-        axes_der = axes_der.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la derecha
-        for i in range(num_pasadas_der):
-            if i < len(sums_der):
-                sums_der[i].plot(ax=axes_der[i], label="Derecha (curva prom)", color='b')
-            if i < len(sums_der_indiv):
-                sums_der_indiv[i].plot(ax=axes_der[i], label="Derecha (curvas indiv)", color='r', linestyle='--')
-            
-            
-            # Configurar el subplot
-            axes_der[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Derecha)')
-            axes_der[i].set_xlabel('Tiempo')
-            axes_der[i].set_ylabel('Valores')
-            axes_der[i].legend()
-            # axes_der[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-
-    # Crear figura y subplots para la izquierda
-    if num_pasadas_izq > 0:
-        fig_izq, axes_izq = plt.subplots(nrows=num_pasadas_izq, ncols=1, figsize=(10, num_pasadas_izq * 3), squeeze=False)
-        axes_izq = axes_izq.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la izquierda
-        for i in range(num_pasadas_izq):
-            if i < len(sums_izq):
-                sums_izq[i].plot(ax=axes_izq[i], label="Izquierda (actual)", color='g')
-            if i < len(sums_izq_indiv):
-                sums_izq_indiv[i].plot(ax=axes_izq[i], label="Izquierda (indiv)", color='r', linestyle='--')
-
-            # Configurar el subplot
-            axes_izq[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Izquierda)')
-            axes_izq[i].set_xlabel('Tiempo')
-            axes_izq[i].set_ylabel('Valores')
-            axes_izq[i].legend()
-            # axes_izq[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-        
-        
-# Definir cantidad de pasadas
-num_pasadas_der = max(len(sums_der), len(sums_der_indiv))  # Máximo de pasadas para la derecha
-num_pasadas_izq = max(len(sums_izq), len(sums_izq_indiv))  # Máximo de pasadas para la izquierda
-
-# Evitar error si no hay datos
-if num_pasadas_der == 0 and num_pasadas_izq == 0:
-    print("No data to plot.")
-else:
-    # Crear figura y subplots para la derecha
-    if num_pasadas_der > 0:
-        fig_der, axes_der = plt.subplots(nrows=num_pasadas_der, ncols=1, figsize=(10, num_pasadas_der * 3), squeeze=False)
-        axes_der = axes_der.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la derecha
-        for i in range(num_pasadas_der):
-            if i < len(sums_der):
-                grf_der[i].plot(ax=axes_der[i], label="Derecha (curva prom)", color='b')
-            if i < len(sums_der_indiv):
-                grf_der_indiv[i].plot(ax=axes_der[i], label="Derecha (curvas indiv)", color='r', linestyle='--')
-            
-            axes_der[i].axhline(y=1, color='black', linestyle='--', linewidth=1.6, label='Referencia (y=1)')
-            # Configurar el subplot
-            axes_der[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Derecha)')
-            axes_der[i].set_xlabel('Tiempo')
-            axes_der[i].set_ylabel('Valores')
-            axes_der[i].legend()
-            # axes_der[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-
-    # Crear figura y subplots para la izquierda
-    if num_pasadas_izq > 0:
-        fig_izq, axes_izq = plt.subplots(nrows=num_pasadas_izq, ncols=1, figsize=(10, num_pasadas_izq * 3), squeeze=False)
-        axes_izq = axes_izq.flatten()  # Convertir en un array 1D para acceso fácil
-
-        # Iterar sobre las pasadas de la izquierda
-        for i in range(num_pasadas_izq):
-            if i < len(sums_izq):
-                grf_izq[i].plot(ax=axes_izq[i], label="Izquierda (actual)", color='g')
-            if i < len(sums_izq_indiv):
-                grf_izq_indiv[i].plot(ax=axes_izq[i], label="Izquierda (indiv)", color='r', linestyle='--')
-            axes_izq[i].axhline(y=1, color='black', linestyle=':', linewidth=1.6, label='Referencia (y=1)')
-            # Configurar el subplot
-            axes_izq[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1} (Izquierda)')
-            axes_izq[i].set_xlabel('Tiempo')
-            axes_izq[i].set_ylabel('Valores')
-            axes_izq[i].legend()
-            # axes_izq[i].set_xlim(14, 24)  # Ajusta si es necesario
-
-        plt.tight_layout()
-        plt.show()
-'''# Verificar datos
-if len(raw_der_proc) == 0 or len(raw_der_final) == 0:
-    print("No hay datos para graficar.")
-else:
-    sensores = [col for col in raw_der_proc[0].columns if col != "Tiempo"]  # Excluir columna tiempo
-    
-    for sensor in sensores:
-        plt.figure(figsize=(12, 5))
-        
-        # --- Ajustar tiempo SOLO para raw_der_proc (copia temporal) ---
-        df_proc_temp = raw_der_proc[0].copy()
-        df_proc_temp["Tiempo"] = (df_proc_temp["Tiempo"] - df_proc_temp["Tiempo"].iloc[0]) / 1000
-        
-        # --- Graficar ---
-        # 1. Datos crudos (con tiempo ajustado)
-        df_proc_temp.plot(
-            x="Tiempo",
-            y=sensor,
-            label="Datos crudos",
-            color="blue",
-            linestyle="--",
-            alpha=0.7,
-            ax=plt.gca(),
-        )
-        
-        # 2. Datos interpolados (YA tiene tiempo modificado)
-        raw_der_final[0].plot(
-            x="Tiempo",  # Usa la columna original (ya ajustada)
-            y=sensor,
-            label="Datos interpolados (100 Hz)",
-            color="red",
-            alpha=0.8,
-            ax=plt.gca(),
-        )
-        
-        # --- Personalizar gráfico ---
-        plt.title(f"Comparación Sensor {sensor}\nCrudo vs Interpolado")
-        plt.xlabel("Tiempo (segundos)")
-        plt.ylabel("Valor")
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        
-        #plt.savefig(f"comparacion_{sensor}.png", dpi=300, bbox_inches="tight")
-        plt.close()
