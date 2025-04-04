@@ -29,7 +29,7 @@ yy_1 = pd.read_csv(c1_pathy, header=None).values.flatten()
 yy_2 = pd.read_csv(c2_pathy, header=None).values.flatten()
 
 # Carpeta donde están los archivos
-folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas"
+folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas/pasadas_sin_proteccion"
 
 # Función para detectar el delimitador
 def detect_delimiter(file_path, sample_size=5):
@@ -64,10 +64,6 @@ raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 # Obtener los nombres en el mismo orden que los DataFrames filtrados
 nombres_izq = [name for name in variables if "izquierda" in name.lower()]
 nombres_der = [name for name in variables if "derecha" in name.lower()]
-
-#Me quedo solo con una pasada y con la calibración estática para sacar el BW
-raw_izq = raw_izq[6:9]
-raw_der = raw_der[6:9]
 
 
 ################ PROCESAMIENTO DE DATOS #######################
@@ -327,7 +323,7 @@ else:
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
-    plt.show()
+   
 
 # Pie IZQUIERDO - mV
 if len(mV_izq) == 0:
@@ -344,7 +340,7 @@ else:
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
-    plt.show()
+   
 
 
 # ==================================================
@@ -361,12 +357,12 @@ else:
     
     for i, df in enumerate(filt_der):
         cols = [col for col in df.columns if col != 'Tiempo']
-        df[cols].plot(ax=axes[i], legend=False)
+        df[cols].plot(ax=axes[i])
         axes[i].set_title(f'Pie DERECHO en KG - Pasada {i+1}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
-    plt.show()
+   
 
 # Pie IZQUIERDO - KG
 if len(filt_izq) == 0:
@@ -378,39 +374,40 @@ else:
     
     for i, df in enumerate(filt_izq):
         cols = [col for col in df.columns if col != 'Tiempo']
-        df[cols].plot(ax=axes[i], legend=False)
+        df[cols].plot(ax=axes[i])
         axes[i].set_title(f'Pie IZQUIERDO en KG - Pasada {i+1}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
-    plt.show()
+ 
 
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
 
+
 def calculo_bw(sums_der, sums_izq):
-    ti_der = 10.00
-    tf_der = 20.00
-    
-    ti_izq = 10.00
-    tf_izq = 20.00
-    
-  
     # Iterar sobre los DataFrames en sums_der
     for i, df in enumerate(sums_der):
-        if i == len(sums_der) - 2:  # Último índice de sums_der
-            prom_der = df.loc[ti_der:tf_der].mean(numeric_only=True)  # BW derecho
+        if i == len(sums_der) - 1:
+            prom_der_3 = df[12.00:20.00].mean()  # BW derecho
+
+        if i == len(sums_der) - 2:
+            prom_der_2 = df[6.00:14.00].mean()  # BW derecho
+
 
     # Iterar sobre los DataFrames en sums_izq
     for i, df in enumerate(sums_izq):
-        if i == len(sums_izq) - 2:  # Último índice de sums_izq
-            prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
-    
-    BW = 51
-    print(prom_der)
-    print(prom_izq)
-    
+        if i == len(sums_izq) - 1:
+            prom_izq_3 = df[10.00:18.00].mean()  # BW derecho
+
+        if i == len(sums_izq) - 2:
+            prom_izq_2 = df[2.00:10.00].mean()  # BW derecho
     grf_der = []
     grf_izq = []
+    
+    print(prom_der_2, prom_der_3)
+    print(prom_izq_2, prom_izq_3)
+    
+    BW = 51
 
     # Iterar a través de los dataframes y los valores de BW_med correspondientes
     for df in sums_der:
@@ -466,6 +463,28 @@ for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     sums_der[i] = subset(sum_der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
     sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq)
 
+BW_1_pie_der = subset(sums_der[0], 25.00, 35.00)
+BW_1_pie_izq = subset(sums_izq[0], 10.00, 20.00)
+BW_2_pies_der_1 = subset(sums_der[1], 10.00, 20.00)
+BW_2_pies_izq_1 = subset(sums_izq[1], 10.00, 20.00)
+BW_2_pies_der_2 = subset(sums_der[2], 15.00, 25.00)
+BW_2_pies_izq_2 = subset(sums_izq[2], 15.00, 25.00)
+BW_2_pies_der_3 = subset(sums_der[3], 20.00, 30.00)
+BW_2_pies_izq_3 = subset(sums_izq[3], 20.00, 30.00)
+
+pasada_der_2 = subset(sums_der[4], 15.00, 26.00)
+pasada_izq_2 = subset(sums_izq[4], 15.00, 26.00)
+pasada_der_3 = subset(sums_der[5], 20.00, 31.00)
+pasada_izq_3 = subset(sums_izq[5], 20.00, 31.00)
+
+sums_der_subset = [pasada_der_2, pasada_der_3]
+sums_izq_subset = [pasada_izq_2, pasada_izq_3]
+
+BW_der_list = [BW_1_pie_der, BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
+BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
+
+print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
+print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
 
 ###################### CALCULO SUMS NORMALIZADO POR BW #####################
 grf_der, grf_izq = calculo_bw(sums_der, sums_izq)   
@@ -527,4 +546,69 @@ else:
 
     plt.tight_layout()
 
-plt.show()
+from analisis_cinetico_BW_calibracion_indiv import sums_der_subset as sums_der_indiv_subset, sums_izq_subset as sums_izq_indiv_subset
+
+# Definir cantidad de pasadas
+num_pasadas = max(len(sums_der_subset), len(sums_izq_subset))
+
+# Evitar error si no hay datos
+if num_pasadas == 0:
+    print("No data to plot.")
+else:
+    # Crear figura para la derecha
+    fig_der, axes_der = plt.subplots(nrows=num_pasadas, ncols=1, figsize=(10, num_pasadas * 3), squeeze=False)
+    axes_der = axes_der.flatten()
+    
+    # Crear figura para la izquierda
+    fig_izq, axes_izq = plt.subplots(nrows=num_pasadas, ncols=1, figsize=(10, num_pasadas * 3), squeeze=False)
+    axes_izq = axes_izq.flatten()
+
+    # Iterar sobre las pasadas
+    for i in range(num_pasadas):
+        # Gráfico de la derecha
+        if i < len(sums_der_subset):
+            sums_der_subset[i].plot(ax=axes_der[i], label="Derecha_Cluster", color='orange')
+            sums_der_indiv_subset[i].plot(ax=axes_der[i], label="Derecha_Indiv", color='r')
+            axes_der[i].set_title(f'Suma de fuerzas Derecha (N) - Pasada N°{i+1}')
+            axes_der[i].set_xlabel('Tiempo')
+            axes_der[i].set_ylabel('Valores')
+            axes_der[i].legend()
+        
+        # Gráfico de la izquierda
+        if i < len(sums_izq_subset):
+            sums_izq_subset[i].plot(ax=axes_izq[i], label="Izquierda_Cluster", color='g')
+            sums_izq_indiv_subset[i].plot(ax=axes_izq[i], label="Izquierda_Indiv", color='b')
+            axes_izq[i].set_title(f'Suma de fuerzas Izquierda (N) - Pasada N°{i+1}')
+            axes_izq[i].set_xlabel('Tiempo')
+            axes_izq[i].set_ylabel('Valores')
+            axes_izq[i].legend()
+
+    plt.tight_layout()
+
+
+# Configuración
+sensor_numbers = range(1, 9)  # Sensores del 1 al 8
+dfs_derecha = filt_der[-2:]  # Últimos 2 DataFrames del pie derecho
+dfs_izquierda = filt_izq[-2:]  # Últimos 2 DataFrames del pie izquierdo
+
+# Función para graficar un pie (derecho o izquierdo)
+def plot_pie_sensors(pie_type, dfs, figsize=(15, 12)):
+    fig, axs = plt.subplots(4, 2, figsize=figsize)
+    fig.suptitle(f'Comparación de sensores - Pie {pie_type} (Últimos 2 pasos)', fontsize=16)
+    axs = axs.flatten()
+    
+    for i, sensor_num in enumerate(sensor_numbers):
+        col_name = f'{pie_type}_S{sensor_num}'  # Ej: "Derecha_S1"
+        for j, df in enumerate(dfs):
+            axs[i].plot(df[col_name], label=f'Pasada {j+2}')
+        axs[i].set_title(f'Sensor {sensor_num}')
+        axs[i].set_ylabel('Valor en kg')
+        axs[i].legend()
+        axs[i].grid(True)
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.show()
+
+# Generar gráficos para ambos pies
+plot_pie_sensors("Derecha", dfs_derecha)
+plot_pie_sensors("Izquierda", dfs_izquierda)

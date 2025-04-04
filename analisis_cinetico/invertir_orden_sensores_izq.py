@@ -2,7 +2,7 @@ import os
 import pandas as pd
 
 # Carpeta de trabajo
-folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas"
+folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas/pasadas_sin_proteccion"
 
 # 1. Identificar archivos del pie izquierdo
 archivos_izq = [f for f in os.listdir(folder_path) 

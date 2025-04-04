@@ -14,11 +14,13 @@ import scipy.signal as signal
 from scipy.signal import find_peaks
 from scipy.stats import pearsonr
 
+plt.ioff()
+
 ############## CARGA DE DATOS ###################3
 import pandas as pd
 
 # Definir la ruta base
-base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv/"
+base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv_sin/"
 
 # Lista de sensores y pies (ajusta esto según tus datos)
 sensor_pie_list = [
@@ -35,8 +37,8 @@ yy_data = {}  # Almacenará los valores de y para cada sensor
 # Leer los archivos CSV para cada sensor
 for sensor_pie in sensor_pie_list:
     # Construir las rutas de los archivos
-    x_path = f"{base_path}x_{sensor_pie}.csv"
-    y_path = f"{base_path}y_{sensor_pie}.csv"
+    x_path = f"{base_path}x_{sensor_pie}_SIN.csv"
+    y_path = f"{base_path}y_{sensor_pie}_SIN.csv"
 
     # Leer los archivos CSV
     xx_data[sensor_pie] = pd.read_csv(x_path, header=None).values.flatten()
@@ -44,13 +46,30 @@ for sensor_pie in sensor_pie_list:
 
 
 # Carpeta donde están los archivos
-folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas"
+folder_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/pasadas/pasadas_sin_proteccion"
 
-# Listar todos los archivos CSV en la carpeta
+# Función para detectar el delimitador
+def detect_delimiter(file_path, sample_size=5):
+    delimiters = [',', ';', '\t']
+    with open(file_path, 'r') as f:
+        sample = [f.readline() for _ in range(sample_size)]
+    
+    for delimiter in delimiters:
+        counts = [line.count(delimiter) for line in sample]
+        if all(count == counts[0] for count in counts) and counts[0] > 0:
+            return delimiter
+    return ','  # Por defecto si no se detecta
+
+# Listar y leer archivos
+dfs = []
 archivos_csv = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
 
-# Leer los CSVs y almacenarlos en una lista
-dfs = [pd.read_csv(os.path.join(folder_path, f), delimiter=";") for f in archivos_csv]
+for f in archivos_csv:
+    file_path = os.path.join(folder_path, f)
+    delimiter = detect_delimiter(file_path)
+    df = pd.read_csv(file_path, delimiter=delimiter)
+    df = df.drop(columns=["Hora"], errors="ignore")
+    dfs.append(df)
 
 # Lista de nombres de archivos sin la extensión
 variables = [os.path.splitext(f)[0] for f in archivos_csv]
@@ -58,10 +77,6 @@ variables = [os.path.splitext(f)[0] for f in archivos_csv]
 # Filtrar los DataFrames en listas separadas
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
 raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
-
-#Me quedo solo con una pasada y con la calibración estática para sacar el BW
-raw_izq = raw_izq[4:6]
-raw_der = raw_der[4:6]
 
 ################ PROCESAMIENTO DE DATOS #######################
 
@@ -298,42 +313,46 @@ filt_der, filt_izq, sums_der, sums_izq, raw_der_final, raw_izq_final = procesar_
 ##################### CÁLCULO DE % BW CON MEDICIONES APOYANDO UN SOLO PIE #######################
 
 def calculo_bw(sums_der, sums_izq):
-    ti_der = 10.00
-    tf_der = 15.00
-    
-    ti_izq = 24.00
-    tf_izq =29.00
-    
-  
     # Iterar sobre los DataFrames en sums_der
     for i, df in enumerate(sums_der):
         if i == len(sums_der) - 1:
-            prom_der = df.loc[ti_der:tf_der].mean(numeric_only=True)  # BW derecho
+            prom_der_3 = df[12.00:20.00].mean()  # BW derecho
+
+        if i == len(sums_der) - 2:
+            prom_der_2 = df[6.00:14.00].mean()  # BW derecho
+
 
     # Iterar sobre los DataFrames en sums_izq
     for i, df in enumerate(sums_izq):
         if i == len(sums_izq) - 1:
-            prom_izq = df.loc[ti_izq:tf_izq].mean(numeric_only=True)  # BW izquierdo
-            
+            prom_izq_3 = df[10.00:18.00].mean()  # BW derecho
+
+        if i == len(sums_izq) - 2:
+            prom_izq_2 = df[2.00:10.00].mean()  # BW derecho
     grf_der = []
     grf_izq = []
+    
+    print(prom_der_2, prom_der_3)
+    print(prom_izq_2, prom_izq_3)
+    
+    BW = 51
 
     # Iterar a través de los dataframes y los valores de BW_med correspondientes
     for df in sums_der:
         # Calcular el porcentaje de GRF respecto al BW correspondiente
-        porcentaje_der = df / prom_der
+        porcentaje_der = df / BW
 
         # Añadir a la lista de porcentajes
         grf_der.append(porcentaje_der)
         
     for df in sums_izq:
         # Calcular el porcentaje de GRF respecto al BW correspondiente
-        porcentaje_izq = df / prom_izq
+        porcentaje_izq = df / BW
 
         # Añadir a la lista de porcentajes
         grf_izq.append(porcentaje_izq)
     
-    return grf_der, grf_izq, prom_der, prom_izq
+    return grf_der, grf_izq
 
 
 ######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
@@ -374,10 +393,72 @@ for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq
 
 ###################### CALCULO SUMS NORMALIZADO POR BW #####################
-grf_der, grf_izq, prom_der, prom_izq = calculo_bw(sums_der, sums_izq)
+grf_der, grf_izq = calculo_bw(sums_der, sums_izq)
+
+BW_1_pie_der = subset(sums_der[0], 25.00, 35.00)
+BW_1_pie_izq = subset(sums_izq[0], 10.00, 20.00)
+BW_2_pies_der_1 = subset(sums_der[1], 10.00, 20.00)
+BW_2_pies_izq_1 = subset(sums_izq[1], 10.00, 20.00)
+BW_2_pies_der_2 = subset(sums_der[2], 15.00, 25.00)
+BW_2_pies_izq_2 = subset(sums_izq[2], 15.00, 25.00)
+BW_2_pies_der_3 = subset(sums_der[3], 20.00, 30.00)
+BW_2_pies_izq_3 = subset(sums_izq[3], 20.00, 30.00)
+
+pasada_der_2 = subset(sums_der[4], 15.00, 26.00)
+pasada_izq_2 = subset(sums_izq[4], 15.00, 26.00)
+pasada_der_3 = subset(sums_der[5], 20.00, 31.00)
+pasada_izq_3 = subset(sums_izq[5], 20.00, 31.00)
+
+sums_der_subset = [pasada_der_2, pasada_der_3]
+sums_izq_subset = [pasada_izq_2, pasada_izq_3]
+
+BW_der_list = [BW_1_pie_der, BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
+BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
+
+print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
+print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
+
+# ==================================================
+# GRÁFICOS DE FUERZA (KG)
+# ==================================================
+
+# Pie DERECHO - KG
+if len(filt_der) == 0:
+    print("No hay datos de PIE DERECHO (KG) para graficar.")
+else:
+    fig_der_kg, axes = plt.subplots(len(filt_der), 1, figsize=(12, 2.5 * len(filt_der)))
+    if len(filt_der) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(filt_der):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i])
+        axes[i].set_title(f'Pie DERECHO en KG - Pasada {i+1}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    
+
+# Pie IZQUIERDO - KG
+if len(filt_izq) == 0:
+    print("No hay datos de PIE IZQUIERDO (KG) para graficar.")
+else:
+    fig_izq_kg, axes = plt.subplots(len(filt_izq), 1, figsize=(12, 2.5 * len(filt_izq)))
+    if len(filt_izq) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(filt_izq):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i])
+        axes[i].set_title(f'Pie IZQUIERDO en KG - Pasada {i+1}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+   
+
 
 # Definir cantidad de pasadas
-num_pasadas = max(len(sums_der), len(sums_izq))
+num_pasadas = max(len(BW_der_list), len(BW_izq_list))
 
 # Evitar error si no hay datos
 if num_pasadas == 0:
@@ -389,11 +470,11 @@ else:
 
     # Iterar sobre las pasadas
     for i in range(num_pasadas):
-        if i < len(sums_der):
-            sums_der[i].plot(ax=axes[i], label="Derecha", color='b')
+        if i < len(BW_der_list):
+            BW_der_list[i].plot(ax=axes[i], label="Derecha", color='b')
 
-        if i < len(sums_izq):
-            sums_izq[i].plot(ax=axes[i], label="Izquierda", color='g')
+        if i < len(BW_izq_list):
+            BW_izq_list[i].plot(ax=axes[i], label="Izquierda", color='g')
 
         axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
         axes[i].set_xlabel('Tiempo')
@@ -402,9 +483,38 @@ else:
         axes[i].legend()
 
     plt.tight_layout()
+    
+
+
+# Definir cantidad de pasadas
+num_pasadas = max(len(sums_der_subset), len(sums_der_subset))
+
+# Evitar error si no hay datos
+if num_pasadas == 0:
+    print("No data to plot.")
+else:
+    # Crear figura y subplots (una fila por pasada, dos señales en cada subplot)
+    fig, axes = plt.subplots(nrows=num_pasadas, ncols=1, figsize=(10, num_pasadas * 3), squeeze=False)
+    axes = axes.flatten()  # Convertir en un array 1D para acceso fácil
+
+    # Iterar sobre las pasadas
+    for i in range(num_pasadas):
+        if i < len(sums_der_subset):
+            sums_der_subset[i].plot(ax=axes[i], label="Derecha", color='b')
+
+        if i < len(sums_izq_subset):
+            sums_izq_subset[i].plot(ax=axes[i], label="Izquierda", color='g')
+
+        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
+        axes[i].set_xlabel('Tiempo')
+        axes[i].set_ylabel('Valores')
+        axes[i].set_ylim(0, 70)  # Ajusta si es necesario
+        axes[i].legend()
+
+    plt.tight_layout()
     plt.show()
 
-
+'''
 # Definir cantidad de pasadas
 num_pasadas = max(len(grf_der), len(grf_izq))
 
@@ -422,7 +532,7 @@ else:
             grf_der[i].plot(ax=axes[i, 0], color='b')
             axes[i, 0].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
             axes[i, 0].set_title(f'GRF Derecha - Pasada N°{i+1}')
-            axes[i, 0].set_ylabel(f'%BW ({prom_der:.2f})')  # Leyenda personalizada
+            axes[i, 0].set_ylabel(f'%BW')  # Leyenda personalizada
             axes[i, 0].legend()
         
         # --- Gráfico IZQUIERDO (columna 1) ---
@@ -430,10 +540,10 @@ else:
             grf_izq[i].plot(ax=axes[i, 1], color='g')
             axes[i, 1].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
             axes[i, 1].set_title(f'GRF Izquierda - Pasada N°{i+1}')
-            axes[i, 1].set_ylabel(f'%BW ({prom_izq:.2f})')  # Leyenda personalizada
+            axes[i, 1].set_ylabel(f'%BW')  # Leyenda personalizada
             axes[i, 1].legend()
 
     # Ajustar diseño y mostrar
     plt.tight_layout()
     plt.show()
-
+'''
