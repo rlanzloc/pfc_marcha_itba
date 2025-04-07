@@ -316,24 +316,30 @@ def calculo_bw(sums_der, sums_izq):
     # Iterar sobre los DataFrames en sums_der
     for i, df in enumerate(sums_der):
         if i == len(sums_der) - 1:
+            prom_der_4 = df[13.00:20.00].mean()  # BW derecho
+            
+        if i == len(sums_der) - 2:
             prom_der_3 = df[12.00:20.00].mean()  # BW derecho
 
-        if i == len(sums_der) - 2:
+        if i == len(sums_der) - 3:
             prom_der_2 = df[6.00:14.00].mean()  # BW derecho
 
 
     # Iterar sobre los DataFrames en sums_izq
     for i, df in enumerate(sums_izq):
         if i == len(sums_izq) - 1:
+            prom_izq_4 = df[13.00:20.00].mean()  # BW derecho
+        
+        if i == len(sums_izq) - 2:
             prom_izq_3 = df[10.00:18.00].mean()  # BW derecho
 
-        if i == len(sums_izq) - 2:
+        if i == len(sums_izq) - 3:
             prom_izq_2 = df[2.00:10.00].mean()  # BW derecho
     grf_der = []
     grf_izq = []
     
-    print(prom_der_2, prom_der_3)
-    print(prom_izq_2, prom_izq_3)
+    print(prom_der_2, prom_der_3, prom_der_4)
+    print(prom_izq_2, prom_izq_3, prom_izq_4)
     
     BW = 51
 
@@ -408,15 +414,21 @@ pasada_der_2 = subset(sums_der[4], 15.00, 26.00)
 pasada_izq_2 = subset(sums_izq[4], 15.00, 26.00)
 pasada_der_3 = subset(sums_der[5], 20.00, 31.00)
 pasada_izq_3 = subset(sums_izq[5], 20.00, 31.00)
+pasada_der_4 = subset(sums_der[6], 25.00, 35.00)
+pasada_izq_4 = subset(sums_izq[6], 25.00, 35.00)
+pasada_der_5 = subset(sums_der[7], 10.00, 20.00)
+pasada_izq_5 = subset(sums_izq[7], 10.00, 20.00)
+pasada_der_6 = subset(sums_der[8], 10.00, 20.00)
+pasada_izq_6 = subset(sums_izq[8], 10.00, 20.00)
 
-sums_der_subset = [pasada_der_2, pasada_der_3]
-sums_izq_subset = [pasada_izq_2, pasada_izq_3]
+sums_der_subset = [pasada_der_2, pasada_der_3, pasada_der_4, pasada_der_5, pasada_der_6]
+sums_izq_subset = [pasada_izq_2, pasada_izq_3, pasada_izq_4, pasada_izq_5, pasada_izq_6]
 
 BW_der_list = [BW_1_pie_der, BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
 BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
 
-print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
-print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
+#print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
+#print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
 
 # ==================================================
 # GRÁFICOS DE FUERZA (KG)
@@ -508,7 +520,7 @@ else:
         axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
         axes[i].set_xlabel('Tiempo')
         axes[i].set_ylabel('Valores')
-        axes[i].set_ylim(0, 70)  # Ajusta si es necesario
+        #axes[i].set_ylim(0, 70)  # Ajusta si es necesario
         axes[i].legend()
 
     plt.tight_layout()

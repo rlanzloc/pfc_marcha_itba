@@ -56,6 +56,7 @@ for f in archivos_csv:
 
 # Lista de nombres de archivos sin la extensión
 variables = [os.path.splitext(f)[0] for f in archivos_csv]
+print(variables)
 
 # Filtrar los DataFrames en listas separadas
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
@@ -388,24 +389,30 @@ def calculo_bw(sums_der, sums_izq):
     # Iterar sobre los DataFrames en sums_der
     for i, df in enumerate(sums_der):
         if i == len(sums_der) - 1:
+            prom_der_4 = df[13.00:20.00].mean()  # BW derecho
+            
+        if i == len(sums_der) - 2:
             prom_der_3 = df[12.00:20.00].mean()  # BW derecho
 
-        if i == len(sums_der) - 2:
+        if i == len(sums_der) - 3:
             prom_der_2 = df[6.00:14.00].mean()  # BW derecho
 
 
     # Iterar sobre los DataFrames en sums_izq
     for i, df in enumerate(sums_izq):
         if i == len(sums_izq) - 1:
+            prom_izq_4 = df[13.00:20.00].mean()  # BW derecho
+        
+        if i == len(sums_izq) - 2:
             prom_izq_3 = df[10.00:18.00].mean()  # BW derecho
 
-        if i == len(sums_izq) - 2:
+        if i == len(sums_izq) - 3:
             prom_izq_2 = df[2.00:10.00].mean()  # BW derecho
     grf_der = []
     grf_izq = []
     
-    print(prom_der_2, prom_der_3)
-    print(prom_izq_2, prom_izq_3)
+    print(prom_der_2, prom_der_3, prom_der_4)
+    print(prom_izq_2, prom_izq_3, prom_izq_4)
     
     BW = 51
 
@@ -476,18 +483,52 @@ pasada_der_2 = subset(sums_der[4], 15.00, 26.00)
 pasada_izq_2 = subset(sums_izq[4], 15.00, 26.00)
 pasada_der_3 = subset(sums_der[5], 20.00, 31.00)
 pasada_izq_3 = subset(sums_izq[5], 20.00, 31.00)
+pasada_der_4 = subset(sums_der[6], 25.00, 35.00)
+pasada_izq_4 = subset(sums_izq[6], 25.00, 35.00)
+pasada_der_5 = subset(sums_der[7], 10.00, 20.00)
+pasada_izq_5 = subset(sums_izq[7], 10.00, 20.00)
+pasada_der_6 = subset(sums_der[8], 10.00, 20.00)
+pasada_izq_6 = subset(sums_izq[8], 10.00, 20.00)
 
-sums_der_subset = [pasada_der_2, pasada_der_3]
-sums_izq_subset = [pasada_izq_2, pasada_izq_3]
+sums_der_subset = [pasada_der_2, pasada_der_3, pasada_der_4, pasada_der_5, pasada_der_6]
+sums_izq_subset = [pasada_izq_2, pasada_izq_3, pasada_izq_4, pasada_izq_5, pasada_izq_6]
 
 BW_der_list = [BW_1_pie_der, BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
 BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
 
-print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
-print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
+#print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
+#print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
 
 ###################### CALCULO SUMS NORMALIZADO POR BW #####################
 grf_der, grf_izq = calculo_bw(sums_der, sums_izq)   
+
+# Definir cantidad de pasadas
+num_pasadas = max(len(sums_der_subset), len(sums_izq_subset))
+
+# Evitar error si no hay datos
+if num_pasadas == 0:
+    print("No data to plot.")
+else:
+    # Crear figura y subplots (una fila por pasada, dos señales en cada subplot)
+    fig, axes = plt.subplots(nrows=num_pasadas, ncols=1, figsize=(10, num_pasadas * 3), squeeze=False)
+    axes = axes.flatten()  # Convertir en un array 1D para acceso fácil
+
+    # Iterar sobre las pasadas
+    for i in range(num_pasadas):
+        if i < len(sums_der_subset):
+            sums_der_subset[i].plot(ax=axes[i], label="Derecha", color='b')
+
+        if i < len(sums_izq_subset):
+            sums_izq_subset[i].plot(ax=axes[i], label="Izquierda", color='g')
+
+        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
+        axes[i].set_xlabel('Tiempo')
+        axes[i].set_ylabel('Valores')
+        #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
+        axes[i].legend()
+
+    plt.tight_layout()
+
 
 # Definir cantidad de pasadas
 num_pasadas = max(len(sums_der), len(sums_izq))
@@ -546,6 +587,7 @@ else:
 
     plt.tight_layout()
 
+
 from analisis_cinetico_BW_calibracion_indiv import sums_der_subset as sums_der_indiv_subset, sums_izq_subset as sums_izq_indiv_subset
 
 # Definir cantidad de pasadas
@@ -588,8 +630,8 @@ else:
 
 # Configuración
 sensor_numbers = range(1, 9)  # Sensores del 1 al 8
-dfs_derecha = filt_der[-2:]  # Últimos 2 DataFrames del pie derecho
-dfs_izquierda = filt_izq[-2:]  # Últimos 2 DataFrames del pie izquierdo
+dfs_derecha = filt_der[-3:]  # Últimos 2 DataFrames del pie derecho
+dfs_izquierda = filt_izq[-3:]  # Últimos 2 DataFrames del pie izquierdo
 
 # Función para graficar un pie (derecho o izquierdo)
 def plot_pie_sensors(pie_type, dfs, figsize=(15, 12)):
@@ -607,8 +649,10 @@ def plot_pie_sensors(pie_type, dfs, figsize=(15, 12)):
         axs[i].grid(True)
     
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.show()
+    
 
 # Generar gráficos para ambos pies
 plot_pie_sensors("Derecha", dfs_derecha)
 plot_pie_sensors("Izquierda", dfs_izquierda)
+
+plt.show()

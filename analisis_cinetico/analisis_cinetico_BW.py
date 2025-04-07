@@ -65,11 +65,6 @@ raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 nombres_izq = [name for name in variables if "izquierda" in name.lower()]
 nombres_der = [name for name in variables if "derecha" in name.lower()]
 
-#Me quedo solo con una pasada y con la calibración estática para sacar el BW
-raw_izq = raw_izq[4:9]
-raw_der = raw_der[4:9]
-
-
 ################ PROCESAMIENTO DE DATOS #######################
 
 def procesar_plantillas(datos_derecha, datos_izquierda, xx_1, xx_2, yy_1, yy_2):
