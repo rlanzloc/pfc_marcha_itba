@@ -420,9 +420,11 @@ pasada_der_5 = subset(sums_der[7], 10.00, 20.00)
 pasada_izq_5 = subset(sums_izq[7], 10.00, 20.00)
 pasada_der_6 = subset(sums_der[8], 10.00, 20.00)
 pasada_izq_6 = subset(sums_izq[8], 10.00, 20.00)
+pasada_der_7 = subset(sums_der[9], 10.00, 20.00)
+pasada_izq_7 = subset(sums_izq[9], 10.00, 20.00)
 
-sums_der_subset = [pasada_der_2, pasada_der_3, pasada_der_4, pasada_der_5, pasada_der_6]
-sums_izq_subset = [pasada_izq_2, pasada_izq_3, pasada_izq_4, pasada_izq_5, pasada_izq_6]
+sums_der_subset = [pasada_der_2, pasada_der_3, pasada_der_4, pasada_der_5, pasada_der_6, pasada_der_7]
+sums_izq_subset = [pasada_izq_2, pasada_izq_3, pasada_izq_4, pasada_izq_5, pasada_izq_6, pasada_izq_7]
 
 BW_der_list = [BW_1_pie_der, BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
 BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
@@ -433,7 +435,7 @@ BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3]
 # ==================================================
 # GRÁFICOS DE FUERZA (KG)
 # ==================================================
-
+'''
 # Pie DERECHO - KG
 if len(filt_der) == 0:
     print("No hay datos de PIE DERECHO (KG) para graficar.")
@@ -468,7 +470,6 @@ else:
     plt.subplots_adjust(hspace=0.4)
    
 
-
 # Definir cantidad de pasadas
 num_pasadas = max(len(BW_der_list), len(BW_izq_list))
 
@@ -495,7 +496,7 @@ else:
         axes[i].legend()
 
     plt.tight_layout()
-    
+
 
 
 # Definir cantidad de pasadas
@@ -524,9 +525,8 @@ else:
         axes[i].legend()
 
     plt.tight_layout()
-    plt.show()
 
-'''
+
 # Definir cantidad de pasadas
 num_pasadas = max(len(grf_der), len(grf_izq))
 

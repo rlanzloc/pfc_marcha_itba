@@ -16,11 +16,11 @@ from scipy.stats import pearsonr
 
 plt.ioff()
 
-############## CARGA DE DATOS ###################3
-c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/x_Cluster1_SIN.csv"
-c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/x_Cluster2_SIN.csv"
-c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/y_Cluster1_SIN.csv"
-c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/y_Cluster2_SIN.csv"
+############## CARGA DE DATOS ###################
+c1_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/x_Cluster1_SIN_log.csv"
+c2_pathx = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/x_Cluster2_SIN_log.csv"
+c1_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/y_Cluster1_SIN_log.csv"
+c2_pathy = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/clusters_sin/y_Cluster2_SIN_log.csv"
 
 # Lee el archivo CSV y carga los parámetros
 xx_1 = pd.read_csv(c1_pathx, header=None).values.flatten()
@@ -65,7 +65,6 @@ raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 # Obtener los nombres en el mismo orden que los DataFrames filtrados
 nombres_izq = [name for name in variables if "izquierda" in name.lower()]
 nombres_der = [name for name in variables if "derecha" in name.lower()]
-
 
 ################ PROCESAMIENTO DE DATOS #######################
 
@@ -310,38 +309,38 @@ filt_der, filt_izq, sums_der, sums_izq, raw_der_proc, raw_izq_proc, raw_der_fina
 # ==================================================
 
 # Pie DERECHO - mV
-if len(mV_der) == 0:
+if len(mV_der[-2:]) == 0:
     print("No hay datos de PIE DERECHO (mV) para graficar.")
 else:
-    fig_der_mv, axes = plt.subplots(len(mV_der), 1, figsize=(12, 2.5 * len(mV_der)))
-    if len(mV_der) == 1:
+    fig_der_mv, axes = plt.subplots(len(mV_der[-2:]), 1, figsize=(12, 2.5 * len(mV_der[-2:])))
+    if len(mV_der[-2:]) == 1:
         axes = [axes]
     
-    for i, df in enumerate(mV_der):
+    for i, df in enumerate(mV_der[-2:]):
         cols = [col for col in df.columns if col != 'Tiempo']
         df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie DERECHO en mV - Pasada {i+1}', pad=10)
+        axes[i].set_title(f'Pie DERECHO en mV - Pasada {i+2}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
    
 
 # Pie IZQUIERDO - mV
-if len(mV_izq) == 0:
+if len(mV_izq[-2:]) == 0:
     print("No hay datos de PIE IZQUIERDO (mV) para graficar.")
 else:
-    fig_izq_mv, axes = plt.subplots(len(mV_izq), 1, figsize=(12, 2.5 * len(mV_izq)))
-    if len(mV_izq) == 1:
+    fig_izq_mv, axes = plt.subplots(len(mV_izq[-2:]), 1, figsize=(12, 2.5 * len(mV_izq[-2:])))
+    if len(mV_izq[-2:]) == 1:
         axes = [axes]
     
-    for i, df in enumerate(mV_izq):
+    for i, df in enumerate(mV_izq[-2:]):
         cols = [col for col in df.columns if col != 'Tiempo']
         df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie IZQUIERDO en mV - Pasada {i+1}', pad=10)
+        axes[i].set_title(f'Pie IZQUIERDO en mV - Pasada {i+2}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
-   
+
 
 
 # ==================================================
@@ -349,34 +348,34 @@ else:
 # ==================================================
 
 # Pie DERECHO - KG
-if len(filt_der) == 0:
+if len(filt_der[-2:]) == 0:
     print("No hay datos de PIE DERECHO (KG) para graficar.")
 else:
-    fig_der_kg, axes = plt.subplots(len(filt_der), 1, figsize=(12, 2.5 * len(filt_der)))
-    if len(filt_der) == 1:
+    fig_der_kg, axes = plt.subplots(len(filt_der[-2:]), 1, figsize=(12, 2.5 * len(filt_der[-2:])))
+    if len(filt_der[-2:]) == 1:
         axes = [axes]
     
-    for i, df in enumerate(filt_der):
+    for i, df in enumerate(filt_der[-2:]):
         cols = [col for col in df.columns if col != 'Tiempo']
         df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie DERECHO en KG - Pasada {i+1}', pad=10)
+        axes[i].set_title(f'Pie DERECHO en KG - Pasada {i+2}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
    
 
 # Pie IZQUIERDO - KG
-if len(filt_izq) == 0:
+if len(filt_izq[-2:]) == 0:
     print("No hay datos de PIE IZQUIERDO (KG) para graficar.")
 else:
-    fig_izq_kg, axes = plt.subplots(len(filt_izq), 1, figsize=(12, 2.5 * len(filt_izq)))
-    if len(filt_izq) == 1:
+    fig_izq_kg, axes = plt.subplots(len(filt_izq[-2:]), 1, figsize=(12, 2.5 * len(filt_izq[-2:])))
+    if len(filt_izq[-2:]) == 1:
         axes = [axes]
     
-    for i, df in enumerate(filt_izq):
+    for i, df in enumerate(filt_izq[-2:]):
         cols = [col for col in df.columns if col != 'Tiempo']
         df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie IZQUIERDO en KG - Pasada {i+1}', pad=10)
+        axes[i].set_title(f'Pie IZQUIERDO en KG - Pasada {i+2}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
@@ -470,8 +469,7 @@ for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
     sums_der[i] = subset(sum_der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
     sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq)
 
-BW_1_pie_der = subset(sums_der[0], 25.00, 35.00)
-BW_1_pie_izq = subset(sums_izq[0], 10.00, 20.00)
+
 BW_2_pies_der_1 = subset(sums_der[1], 10.00, 20.00)
 BW_2_pies_izq_1 = subset(sums_izq[1], 10.00, 20.00)
 BW_2_pies_der_2 = subset(sums_der[2], 15.00, 25.00)
@@ -489,12 +487,25 @@ pasada_der_5 = subset(sums_der[7], 10.00, 20.00)
 pasada_izq_5 = subset(sums_izq[7], 10.00, 20.00)
 pasada_der_6 = subset(sums_der[8], 10.00, 20.00)
 pasada_izq_6 = subset(sums_izq[8], 10.00, 20.00)
+pasada_der_7 = subset(sums_der[9], 10.00, 20.00)
+pasada_izq_7 = subset(sums_izq[9], 10.00, 20.00)
 
-sums_der_subset = [pasada_der_2, pasada_der_3, pasada_der_4, pasada_der_5, pasada_der_6]
-sums_izq_subset = [pasada_izq_2, pasada_izq_3, pasada_izq_4, pasada_izq_5, pasada_izq_6]
+sums_der_subset = [pasada_der_2, pasada_der_3, pasada_der_4, pasada_der_5, pasada_der_6, pasada_der_7]
+sums_izq_subset = [pasada_izq_2, pasada_izq_3, pasada_izq_4, pasada_izq_5, pasada_izq_6, pasada_izq_7]
 
-BW_der_list = [BW_1_pie_der, BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
-BW_izq_list = [BW_1_pie_izq, BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
+BW_der_list = [BW_2_pies_der_1, BW_2_pies_der_2, BW_2_pies_der_3]
+BW_izq_list = [BW_2_pies_izq_1, BW_2_pies_izq_2, BW_2_pies_izq_3] 
+
+
+BW_2_pies_der_1_sensores = subset(mV_der[1], 10.00, 20.00)
+BW_2_pies_izq_1_sensores = subset(mV_izq[1], 10.00, 20.00)
+BW_2_pies_der_2_sensores = subset(mV_der[2], 15.00, 25.00)
+BW_2_pies_izq_2_sensores = subset(mV_izq[2], 15.00, 25.00)
+BW_2_pies_der_3_sensores = subset(mV_der[3], 20.00, 30.00)
+BW_2_pies_izq_3_sensores = subset(mV_izq[3], 20.00, 30.00)
+
+BW_der_list_sensores = [BW_2_pies_der_1_sensores, BW_2_pies_der_2_sensores, BW_2_pies_der_3_sensores]
+BW_izq_list_sensores = [BW_2_pies_izq_1_sensores, BW_2_pies_izq_2_sensores, BW_2_pies_izq_3_sensores]
 
 #print(BW_der_list[1].mean(), BW_der_list[2].mean(), BW_der_list[3].mean())
 #print(BW_izq_list[1].mean(), BW_izq_list[2].mean(), BW_izq_list[3].mean())
@@ -521,7 +532,7 @@ else:
         if i < len(sums_izq_subset):
             sums_izq_subset[i].plot(ax=axes[i], label="Izquierda", color='g')
 
-        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
+        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+2}')
         axes[i].set_xlabel('Tiempo')
         axes[i].set_ylabel('Valores')
         #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
@@ -549,13 +560,14 @@ else:
         if i < len(sums_izq):
             sums_izq[i].plot(ax=axes[i], label="Izquierda", color='g')
 
-        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
+        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+2}')
         axes[i].set_xlabel('Tiempo')
         axes[i].set_ylabel('Valores')
         #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
         axes[i].legend()
 
     plt.tight_layout()
+
 
 # Definir cantidad de pasadas
 num_pasadas = max(len(grf_der), len(grf_izq))
@@ -579,7 +591,7 @@ else:
         # Agregar línea horizontal en 1
         axes[i].axhline(y=1, color='r', linestyle='--', label='Referencia BW')
 
-        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+1}')
+        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+2}')
         axes[i].set_xlabel('Tiempo')
         axes[i].set_ylabel('Valores')
         #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
@@ -611,7 +623,7 @@ else:
         if i < len(sums_der_subset):
             sums_der_subset[i].plot(ax=axes_der[i], label="Derecha_Cluster", color='orange')
             sums_der_indiv_subset[i].plot(ax=axes_der[i], label="Derecha_Indiv", color='r')
-            axes_der[i].set_title(f'Suma de fuerzas Derecha (N) - Pasada N°{i+1}')
+            axes_der[i].set_title(f'Suma de fuerzas Derecha (N) - Pasada N°{i+2}')
             axes_der[i].set_xlabel('Tiempo')
             axes_der[i].set_ylabel('Valores')
             axes_der[i].legend()
@@ -620,7 +632,7 @@ else:
         if i < len(sums_izq_subset):
             sums_izq_subset[i].plot(ax=axes_izq[i], label="Izquierda_Cluster", color='g')
             sums_izq_indiv_subset[i].plot(ax=axes_izq[i], label="Izquierda_Indiv", color='b')
-            axes_izq[i].set_title(f'Suma de fuerzas Izquierda (N) - Pasada N°{i+1}')
+            axes_izq[i].set_title(f'Suma de fuerzas Izquierda (N) - Pasada N°{i+2}')
             axes_izq[i].set_xlabel('Tiempo')
             axes_izq[i].set_ylabel('Valores')
             axes_izq[i].legend()
@@ -630,29 +642,71 @@ else:
 
 # Configuración
 sensor_numbers = range(1, 9)  # Sensores del 1 al 8
-dfs_derecha = filt_der[-3:]  # Últimos 2 DataFrames del pie derecho
-dfs_izquierda = filt_izq[-3:]  # Últimos 2 DataFrames del pie izquierdo
+num_pasadas = 3
 
 # Función para graficar un pie (derecho o izquierdo)
-def plot_pie_sensors(pie_type, dfs, figsize=(15, 12)):
+def plot_pie_sensors(pie_type, data_list, figsize=(20, 16)):
     fig, axs = plt.subplots(4, 2, figsize=figsize)
-    fig.suptitle(f'Comparación de sensores - Pie {pie_type} (Últimos 2 pasos)', fontsize=16)
+    fig.suptitle(f'Comparación de sensores - Pie {pie_type}', fontsize=16)
     axs = axs.flatten()
     
-    for i, sensor_num in enumerate(sensor_numbers):
-        col_name = f'{pie_type}_S{sensor_num}'  # Ej: "Derecha_S1"
-        for j, df in enumerate(dfs):
-            axs[i].plot(df[col_name], label=f'Pasada {j+2}')
-        axs[i].set_title(f'Sensor {sensor_num}')
-        axs[i].set_ylabel('Valor en kg')
-        axs[i].legend()
-        axs[i].grid(True)
+    for sensor_idx, sensor_num in enumerate(sensor_numbers):
+        for pasada_idx, df_pasada in enumerate(data_list):
+            # Obtener los datos del sensor específico
+            sensor_data = df_pasada.iloc[:, sensor_idx]  # Asumiendo que los sensores están en columnas ordenadas
+            
+            # Graficar cada pasada
+            axs[sensor_idx].plot(sensor_data, 
+                                label=f'Pasada {pasada_idx + 1}',
+                                alpha=0.7,
+                                linewidth=2)
+            
+        axs[sensor_idx].set_title(f'Sensor {sensor_num}')
+        axs[sensor_idx].set_ylabel('Valor en kg')
+        axs[sensor_idx].legend()
+        axs[sensor_idx].grid(True)
     
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    
 
 # Generar gráficos para ambos pies
-plot_pie_sensors("Derecha", dfs_derecha)
-plot_pie_sensors("Izquierda", dfs_izquierda)
+plot_pie_sensors("Derecho", BW_der_list_sensores)
+plot_pie_sensors("Izquierdo", BW_izq_list_sensores)
+
+
+# Configuración básica
+plt.style.use('ggplot')  # Estilo claro
+colors = plt.cm.tab10.colors  # 10 colores distintos
+y_limits = (0, 5000)  # Límites del eje Y fijos
+
+# Función simplificada con ylim
+def plot_simple_with_legend(pass_list, pie_type, figsize=(18, 6)):
+    fig, axs = plt.subplots(1, 3, figsize=figsize)
+    
+    for pasada_idx, pass_data in enumerate(pass_list):
+        ax = axs[pasada_idx]
+        ax.set_title(f'Pasada {pasada_idx+1} - {pie_type}')
+        
+        # Graficar todos los sensores
+        for sensor_idx in range(8):
+            ax.plot(pass_data.iloc[:, sensor_idx], 
+                   color=colors[sensor_idx],
+                   label=f'S{sensor_idx+1}',
+                   linewidth=2)
+        
+        # Configurar límites del eje Y
+        ax.set_ylim(y_limits)
+        
+        # Añadir leyenda a CADA subplot
+        ax.legend(loc='upper right', fontsize=8)
+        ax.grid(True)
+        ax.set_xlabel('Muestras')
+        ax.set_ylabel('mV')
+    
+    plt.tight_layout()
+    return fig
+
+# Generar gráficos
+plot_simple_with_legend(BW_der_list_sensores, "Derecho")
+plot_simple_with_legend(BW_izq_list_sensores, "Izquierdo")
 
 plt.show()
