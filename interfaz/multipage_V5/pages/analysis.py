@@ -84,19 +84,121 @@ layout = dbc.Container([
 def update_parametros_espaciotemporales(stored_data):
     if stored_data is None or 'parametros_espaciotemporales' not in stored_data:
         return []
-
+    
     parametros = stored_data['parametros_espaciotemporales']
-    return dbc.Col([
-        html.H4("Parámetros Espaciotemporales"),
-        html.P(f"Duración promedio del ciclo (derecho): {parametros['average_duration_right']:.2f} segundos"),
-        html.P(f"Longitud promedio del ciclo (derecho): {parametros['average_length_right']:.2f} metros"),
-        html.P(f"Duración promedio del ciclo (izquierdo): {parametros['average_duration_left']:.2f} segundos"),
-        html.P(f"Longitud promedio del ciclo (izquierdo): {parametros['average_length_left']:.2f} metros"),
-        html.P(f"Tiempo promedio de los pasos: {parametros['tiempo_promedio_paso']:.2f} segundos"),
-        html.P(f"Longitud promedio de los pasos: {parametros['longitud_promedio_paso']:.2f} metros"),
-        html.P(f"Velocidad: {parametros['velocidad']:.2f} km/hora"),
-        html.P(f"Cadencia: {parametros['cadencia']:.2f} pasos/minuto")
-    ])
+    
+    # Determinar el rango máximo para la escala común
+    max_duracion = max(parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'], parametros['tiempo_paso'])
+    max_longitud = max(parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'], parametros['longitud_paso'])
+    
+    # Función para crear gráficos de barras con escala consistente
+    def crear_grafico_barras(valores, titulo, colores, max_valor):
+        fig = go.Figure()
+        
+        # Para pasos (una sola barra)
+        if len(valores) == 1:
+            fig.add_trace(go.Bar(
+                x=['Paso'],
+                y=valores,
+                marker_color=['#9E9E9E'],  # Gris
+                text=[f"{valores[0]:.2f}"],
+                textposition='auto'
+            ))
+        # Para ciclos (dos barras)
+        else:
+            fig.add_trace(go.Bar(
+                x=['Derecho', 'Izquierdo'],
+                y=valores,
+                marker_color=colores,
+                text=[f"{v:.2f}" for v in valores],
+                textposition='auto'
+            ))
+        
+        fig.update_layout(
+            title=titulo,
+            margin=dict(l=20, r=20, t=40, b=20),
+            height=150,
+            showlegend=False,
+            xaxis=dict(showgrid=False),
+            yaxis=dict(
+                showgrid=False, 
+                showticklabels=False,
+                range=[0, max_valor * 1.1]  # 10% más para espacio
+            )
+        )
+        return dcc.Graph(figure=fig, config={'staticPlot': True}, style={'height': '150px'})
+    
+    # Gráficos para ciclos (dos barras)
+    duracion_fig = crear_grafico_barras(
+        [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
+        "Duración (s)",
+        ['#FF5252', '#4285F4'],  # Rojo y azul
+        max_duracion
+    )
+    
+    longitud_fig = crear_grafico_barras(
+        [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
+        "Longitud (m)",
+        ['#FF5252', '#4285F4'],  # Rojo y azul
+        max_longitud
+    )
+    
+    # Gráficos para pasos (una barra gris)
+    paso_duracion_fig = crear_grafico_barras(
+        [parametros['tiempo_paso']],
+        "Duración paso (s)",
+        None,
+        max_duracion
+    )
+    
+    paso_longitud_fig = crear_grafico_barras(
+        [parametros['longitud_paso']],
+        "Longitud paso (m)",
+        None,
+        max_longitud
+    )
+    
+    return dbc.Row([
+        # Tarjeta para ciclos
+        dbc.Col(dbc.Card([
+            dbc.CardHeader(html.H4("Ciclos de Marcha", className="text-center mb-0")),
+            dbc.CardBody([
+                html.H5(f"Número: {parametros['num_ciclos_derecho']}D / {parametros['num_ciclos_izquierdo']}I", 
+                        className="text-center mb-3"),
+                duracion_fig,
+                longitud_fig
+            ])
+        ], className="h-100"), width=4),
+        
+        # Tarjeta para pasos
+        dbc.Col(dbc.Card([
+            dbc.CardHeader(html.H4("Pasos", className="text-center mb-0")),
+            dbc.CardBody([
+                html.H5(f"Número: {parametros['num_pasos']}", className="text-center mb-3"),
+                paso_duracion_fig,
+                paso_longitud_fig
+            ])
+        ], className="h-100"), width=4),
+        
+        # Tarjeta para velocidad y cadencia
+        dbc.Col(dbc.Card([
+            dbc.CardHeader(html.H4("Otros Parámetros", className="text-center mb-0")),
+            dbc.CardBody([
+                html.Div([
+                    html.Div([
+                        html.P("Velocidad:", className="mb-1"),
+                        html.P(f"{parametros['velocidad']:.2f} km/h", className="h4 text-primary")
+                    ], className="text-center mb-3"),
+                    html.Div([
+                        html.P("Cadencia:", className="mb-1"),
+                        html.P(f"{parametros['cadencia']:.2f} pasos/min", className="h4 text-primary")
+                    ], className="text-center")
+                ])
+            ])
+        ], className="h-100"), width=4)
+    ], className="mb-4")
+
+
 
 def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha", rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
     """
@@ -359,3 +461,4 @@ def update_graphs(articulaciones, lado, stored_data):
         graphs.append(dbc.Col(dcc.Graph(figure=fig_x), width=4))
 
     return graphs
+
