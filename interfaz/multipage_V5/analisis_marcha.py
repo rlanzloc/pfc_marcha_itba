@@ -27,19 +27,17 @@ def procesar_archivo_c3d( filename ):
         V2 = np.subtract(P3, P1)
 
         # Producto vectorial entre V1 y V2 para obtener el vector normal (perpendicular)
-        N = cross(V1, V2)
-
-        return  N
+        return  cross(V1, V2)
 
     # Define una función para aplicar el filtro de paso bajo
     def low_pass_filter(data, cutoff, fs, order=4):
         nyquist = 0.5 * fs  # Frecuencia de Nyquist
         normal_cutoff = cutoff / nyquist  # Frecuencia de corte normalizada
         b, a = butter(order, normal_cutoff, btype="low", analog=False)  # Diseña el filtro
-        filtered_data = filtfilt(b, a, data)  # Aplica el filtro
-        return filtered_data
+        # Aplica el filtro
+        return filtfilt(b, a, data)
 
-    def find_cycles_to_exclude(heel_y, time, min_indices, threshold_time=0.2, threshold_shape=0.3,threshold_shape1= 0.3 ):
+    def find_cycles_to_exclude(heel_y, time, min_indices, threshold_time, threshold_shape,threshold_shape1):
         """
         Encuentra los ciclos que deben ser excluidos basados en la duración y la forma de la curva.
 
@@ -63,7 +61,7 @@ def procesar_archivo_c3d( filename ):
         # Encontrar ciclos con duración muy diferente al promedio
         exclude_duration = np.where(duration_diffs > threshold_time)[0]
 
- 
+
         # Obtener todos los ciclos
         all_cycles = [heel_y[min_indices[i]:min_indices[i + 1]] for i in range(len(min_indices) - 1)]
 
@@ -83,6 +81,7 @@ def procesar_archivo_c3d( filename ):
                 shape_diff = np.linalg.norm(normalized_cycle - avg_cycle)
                 shape_diffs.append(shape_diff)
 
+
             # Encontrar ciclos con forma muy diferente al promedio
             exclude_shape = [cycles_indices[i] for i in np.where(np.array(shape_diffs) > threshold_shape)[0]]
             return exclude_shape, avg_cycle
@@ -94,17 +93,18 @@ def procesar_archivo_c3d( filename ):
         remaining_cycles_after_shape_1 = [i for i in remaining_cycles if i not in exclude_shape_1]
 
         # Segunda exclusión por forma
-        exclude_shape_2, avg_cycle_2 = exclude_by_shape(remaining_cycles_after_shape_1, all_cycles, threshold_shape)
+        exclude_shape_2, avg_cycle_2 = exclude_by_shape(remaining_cycles_after_shape_1, all_cycles, threshold_shape1)
+        not_excluded_cycles = [i for i in remaining_cycles_after_shape_1 if i not in exclude_shape_2]
 
         # Combinar todas las exclusiones y ajustar la numeración (sumar 1)
         excluded_cycles = list(set(exclude_duration).union(set(exclude_shape_1)).union(set(exclude_shape_2)))
         excluded_cycles = [i + 1 for i in excluded_cycles]  # Ajustar la numeración
+        not_excluded_cycles = [i + 1 for i in not_excluded_cycles]  # Ajustar la numeración
 
-   
 
-        return excluded_cycles
-    
+        return excluded_cycles, not_excluded_cycles
 
+    # Función para excluir ciclos
     def exclude_cycles(min_indices, min_times, excluded_cycles):
         """
         Excluye los ciclos especificados en excluded_cycles de min_indices y min_times.
@@ -195,6 +195,161 @@ def procesar_archivo_c3d( filename ):
                 steps.append((inicio_tiempo, siguiente_tiempo, tiempo_paso, longitud_paso))
 
         return steps
+    
+    def eliminar_ultimo_paso(filtered_indices_right, filtered_indices_left,
+                        filtered_times_right, filtered_times_left,
+                        final_cycles_right, final_cycles_left,
+                        excluded_cycles_right, excluded_cycles_left,
+                        time, segmentos):
+        # Inicializar listas para resultados
+        indices_in_segment_right = []
+        indices_in_segment_left = []
+        times_in_segment_right = []
+        times_in_segment_left = []
+        cycle_in_segment_right = []
+        cycle_in_segment_left = []
+
+        # Procesar cada segmento
+        for segmento in segmentos:
+            seg_start = time[segmento[0]]
+            seg_end = time[segmento[-1]]
+
+            # Pasos derechos en este segmento
+            right_in_seg = []
+            for k in range(len(filtered_times_right)):
+                if filtered_times_right[k][0] >= seg_start and filtered_times_right[k][1] <= seg_end:
+                    right_in_seg.append({
+                        'indices': filtered_indices_right[k],
+                        'times': filtered_times_right[k],
+                        'cycle': final_cycles_right[k],
+                        'type': 'right'
+                    })
+
+            # Pasos izquierdos en este segmento
+            left_in_seg = []
+            for k in range(len(filtered_times_left)):
+                if filtered_times_left[k][0] >= seg_start and filtered_times_left[k][1] <= seg_end:
+                    left_in_seg.append({
+                        'indices': filtered_indices_left[k],
+                        'times': filtered_times_left[k],
+                        'cycle': final_cycles_left[k],
+                        'type': 'left'
+                    })
+
+            # Combinar y ordenar todos los pasos por tiempo de inicio
+            todos_los_pasos = right_in_seg + left_in_seg
+            todos_los_pasos.sort(key=lambda x: x['times'][0])
+
+            # Conservar siempre el primer paso (nunca eliminarlo)
+            # Eliminar solo el último paso si hay 2 o más pasos
+            for i, paso in enumerate(todos_los_pasos):
+                if i == len(todos_los_pasos) - 1 and len(todos_los_pasos) >= 2:
+                    # Excluir el último paso si hay al menos 2 pasos
+                    if paso['type'] == 'right':
+                        excluded_cycles_right.append(paso['cycle'])
+                    else:
+                        excluded_cycles_left.append(paso['cycle'])
+                else:
+                    # Conservar todos los demás pasos (incluido el primero)
+                    if paso['type'] == 'right':
+                        indices_in_segment_right.append(paso['indices'])
+                        times_in_segment_right.append(paso['times'])
+                        cycle_in_segment_right.append(paso['cycle'])
+                    else:
+                        indices_in_segment_left.append(paso['indices'])
+                        times_in_segment_left.append(paso['times'])
+                        cycle_in_segment_left.append(paso['cycle'])
+
+        # Eliminar duplicados y ordenar ciclos excluidos
+        excluded_cycles_right = sorted(list(set(excluded_cycles_right)))
+        excluded_cycles_left = sorted(list(set(excluded_cycles_left)))
+
+        return (indices_in_segment_right, indices_in_segment_left,
+                times_in_segment_right, times_in_segment_left,
+                cycle_in_segment_right, cycle_in_segment_left,
+                excluded_cycles_right, excluded_cycles_left)
+
+    def procesar_articulacion(articulacion, nombre, ylim, min_indices):
+        euler_angles = ktk.geometry.get_angles(articulacion, "ZYX", degrees=True)
+        angles = ktk.TimeSeries(time=markers.time)
+        angles.data["Z"] = euler_angles[:, 0]
+        angles.data["Y"] = euler_angles[:, 1]
+        angles.data["X"] = euler_angles[:, 2]
+
+        # Define parámetros del filtro
+        sampling_rate = 100  # Frecuencia de muestreo en Hz (ajusta según tus datos)
+        cutoff_frequency = 6  # Frecuencia de corte en Hz
+        order = 4  # Orden del filtro
+
+        # Aplicar filtro
+        angles.data["Z"] = low_pass_filter(angles.data["Z"], cutoff_frequency, sampling_rate, order)
+        angles.data["Y"] = low_pass_filter(angles.data["Y"], cutoff_frequency, sampling_rate, order)
+        angles.data["X"] = low_pass_filter(angles.data["X"], cutoff_frequency, sampling_rate, order)
+
+        # Agrega información adicional a los datos
+        angles = angles.add_data_info("Dorsiflexion", "Unit", "deg")
+        angles = angles.add_data_info("Int/ Ext Rotation", "Unit", "deg")
+        angles = angles.add_data_info("Eversion", "Unit", "deg")
+
+        # Normalización y promediado
+        normalized_Z, normalized_Y, normalized_X = [], [], []
+
+
+
+        gait_cycles_angles = []
+        curves_dict = {"Z": [], "Y": [], "X": []}
+
+        for i in min_indices:
+            start_idx = i[0]
+            end_idx = i[1]
+
+
+            cycle_angles = {
+                    "time": angles.time[start_idx:end_idx],
+                    "Z": angles.data["Z"][start_idx:end_idx],
+                    "Y": angles.data["Y"][start_idx:end_idx],
+                    "X": angles.data["X"][start_idx:end_idx]
+            }
+
+            cycle_length = len(cycle_angles["time"])
+            normalized_time = np.linspace(0, 100, num=cycle_length)
+            cycle_angles["Normalized_time"] = normalized_time
+
+            num_points = 100
+            fixed_time = np.linspace(0, 100, num=num_points)
+            Z_interpolated = np.interp(fixed_time, normalized_time, cycle_angles["Z"])
+            Y_interpolated = np.interp(fixed_time, normalized_time, cycle_angles["Y"])
+            X_interpolated = np.interp(fixed_time, normalized_time, cycle_angles["X"])
+
+
+            normalized_Z.append(Z_interpolated)
+            normalized_Y.append(Y_interpolated)
+            normalized_X.append(X_interpolated)
+            curves_dict["Z"].append(Z_interpolated)
+            curves_dict["Y"].append(Y_interpolated)
+            curves_dict["X"].append(X_interpolated)
+
+            cycle_angles["Fixed_time"] = fixed_time
+            cycle_angles["Z_interpolated"] = Z_interpolated
+            cycle_angles["Y_interpolated"] = Y_interpolated
+            cycle_angles["X_interpolated"] = X_interpolated
+            gait_cycles_angles.append(cycle_angles)
+
+        if len(normalized_Z) > 0:
+            if len(normalized_Z) == 1:  # Si solo hay un ciclo no excluido
+                average_Z = normalized_Z[0]
+                average_Y = normalized_Y[0]
+                average_X = normalized_X[0]
+            else:  # Si hay múltiples ciclos
+                average_Z = np.mean(normalized_Z, axis=0)
+                average_Y = np.mean(normalized_Y, axis=0)
+                average_X = np.mean(normalized_X, axis=0)
+
+
+        # Devolver las curvas no excluidas y los promedios
+        return curves_dict, average_Z, average_Y, average_X
+
+
 
     """# Cargamos los datos"""
 
@@ -445,237 +600,100 @@ def procesar_archivo_c3d( filename ):
     Femur_to_tibia_Left= ktk.geometry.get_local_coordinates( frames.data["FemurRodilla_Left"], frames.data["TibiaRodilla_Left"])
     Hip_to_femur_Left = ktk.geometry.get_local_coordinates(frames.data["Femur_Left"], frames.data["Hip_Left"])
 
-    num_points=100
-    heel_r = markers.data["Rashel:RHeel"][:, 1]  # Coordenada Y del talón
-    cutoff = 15
-    fs = 100
-    heel_r = low_pass_filter(heel_r, cutoff, fs, order=3)
-
-    num_points=100
-    heel_l = markers.data["Rashel:LHeel"][:, 1]  # Coordenada Y del talón
-    cutoff = 15
-    fs = 100
-    heel_l = low_pass_filter(heel_l, cutoff, fs, order=3)
+    # --- Procesamiento de ciclos de marcha ---
+    heel_r = markers.data["Rashel:RHeel"][:, 1]
+    heel_l = markers.data["Rashel:LHeel"][:, 1]
+    heel_r = low_pass_filter(heel_r, cutoff=15, fs=100, order=3)
+    heel_l = low_pass_filter(heel_l, cutoff=15, fs=100, order=3)
     time = markers.time  # Tiempo correspondiente a los datos
 
-    # Detectar mínimos locales (eventos de contacto inicial)
-    min_indices = argrelextrema(heel_l, np.less, order=20)[0]  # `order` ajusta la sensibilidad
-    min_times = time[min_indices]  # Tiempos de los mínimos
+    # Detección de ciclos
+    min_indices_right = argrelextrema(heel_r, np.less, order=20)[0]
+    min_indices_left = argrelextrema(heel_l, np.less, order=20)[0]
 
+    # Exclusión de ciclos anómalos
+    excluded_cycles_right, final_cycles_right = find_cycles_to_exclude(heel_r, markers.time, min_indices_right, 0.5, 0.4, 0.4)
+    excluded_cycles_left, final_cycles_left = find_cycles_to_exclude(heel_l, markers.time, min_indices_left, 0.5, 0.4, 0.4)
 
-
-    def procesar_articulacion(articulacion, nombre, heel, ylim):
-        euler_angles = ktk.geometry.get_angles(articulacion, "ZYX", degrees=True)
-        angles = ktk.TimeSeries(time=markers.time)
-        angles.data["Z"] = euler_angles[:, 0]
-        angles.data["Y"] = euler_angles[:, 1]
-        angles.data["X"] = euler_angles[:, 2]
-
-        # Define parámetros del filtro
-        sampling_rate = 100  # Frecuencia de muestreo en Hz (ajusta según tus datos)
-        cutoff_frequency = 6  # Frecuencia de corte en Hz
-        order = 4  # Orden del filtro
-
-        # Aplicar filtro
-        angles.data["Z"] = low_pass_filter(angles.data["Z"], cutoff_frequency, sampling_rate, order)
-        angles.data["Y"] = low_pass_filter(angles.data["Y"], cutoff_frequency, sampling_rate, order)
-        angles.data["X"] = low_pass_filter(angles.data["X"], cutoff_frequency, sampling_rate, order)
-
-        # Agrega información adicional a los datos
-        angles = angles.add_data_info("Dorsiflexion", "Unit", "deg")
-        angles = angles.add_data_info("Int/ Ext Rotation", "Unit", "deg")
-        angles = angles.add_data_info("Eversion", "Unit", "deg")
-
-        # Normalización y promediado
-        normalized_Z, normalized_Y, normalized_X = [], [], []
-
-        time = markers.time  # Tiempo correspondiente a los datos
-
-        # Detectar mínimos locales (eventos de contacto inicial)
-        min_indices = argrelextrema(heel, np.less, order=20)[0]  # `order` ajusta la sensibilidad
-        min_times = time[min_indices]  # Tiempos de los mínimos
-
-        # Uso de la función
-        excluded_cycles = find_cycles_to_exclude(heel, time, min_indices, threshold_time=0.4, threshold_shape=0.4, threshold_shape1=0.3)
-        
-
-        gait_cycles_angles = []
-        curves_dict = {"Z": [], "Y": [], "X": []}
-
-        for i in range(len(min_indices) - 1):
-            start_idx = min_indices[i]
-            end_idx = min_indices[i + 1]
-            cycle_angles = {
-                "time": angles.time[start_idx:end_idx],
-                "Z": angles.data["Z"][start_idx:end_idx],
-                "Y": angles.data["Y"][start_idx:end_idx],
-                "X": angles.data["X"][start_idx:end_idx]
-            }
-
-            cycle_length = len(cycle_angles["time"])
-            normalized_time = np.linspace(0, 100, num=cycle_length)
-            cycle_angles["Normalized_time"] = normalized_time
-
-            num_points = 100
-            fixed_time = np.linspace(0, 100, num=num_points)
-            Z_interpolated = np.interp(fixed_time, normalized_time, cycle_angles["Z"])
-            Y_interpolated = np.interp(fixed_time, normalized_time, cycle_angles["Y"])
-            X_interpolated = np.interp(fixed_time, normalized_time, cycle_angles["X"])
-
-            if i + 1 not in excluded_cycles:
-                normalized_Z.append(Z_interpolated)
-                normalized_Y.append(Y_interpolated)
-                normalized_X.append(X_interpolated)
-                curves_dict["Z"].append(Z_interpolated)
-                curves_dict["Y"].append(Y_interpolated)
-                curves_dict["X"].append(X_interpolated)
-
-            cycle_angles["Fixed_time"] = fixed_time
-            cycle_angles["Z_interpolated"] = Z_interpolated
-            cycle_angles["Y_interpolated"] = Y_interpolated
-            cycle_angles["X_interpolated"] = X_interpolated
-            gait_cycles_angles.append(cycle_angles)
-
-        average_Z = np.mean(normalized_Z, axis=0)
-        average_Y = np.mean(normalized_Y, axis=0)
-        average_X = np.mean(normalized_X, axis=0)
-
-
-        # Devolver las curvas no excluidas y los promedios
-        return curves_dict, average_Z, average_Y, average_X
-
-
-    # Procesar Tobillo Derecho
-    curves_tobillo_derecho, tobillo_derecho_Z, tobillo_derecho_Y, tobillo_derecho_X = procesar_articulacion(
-        Tibia_to_calcaneus_Right, "Tobillo Derecho", heel_r, (-30, 30))
-    curvas_tobillo_derecho = pd.DataFrame(curves_tobillo_derecho)
-
-    # Procesar Tobillo Izquierdo
-    curves_tobillo_izquierdo, tobillo_izquierdo_Z, tobillo_izquierdo_Y, tobillo_izquierdo_X = procesar_articulacion(
-        Tibia_to_calcaneus_Left, "Tobillo Izquierdo", heel_l, (-30, 30))
-    curvas_tobillo_izquierdo = pd.DataFrame(curves_tobillo_izquierdo)
-
-    # Procesar Rodilla Derecha
-    curves_rodilla_derecha, rodilla_derecha_Z, rodilla_derecha_Y, rodilla_derecha_X = procesar_articulacion(
-        Femur_to_tibia_Right, "Rodilla Derecha", heel_r, (-20, 70))
-    curvas_rodilla_derecha = pd.DataFrame(curves_rodilla_derecha)
-
-    # Procesar Rodilla Izquierda
-    curves_rodilla_izquierda, rodilla_izquierda_Z, rodilla_izquierda_Y, rodilla_izquierda_X = procesar_articulacion(
-        Femur_to_tibia_Left, "Rodilla Izquierda", heel_l, (-20, 70))
-    curvas_rodilla_izquierda = pd.DataFrame(curves_rodilla_izquierda)
-
-    # Procesar Cadera Derecha
-    curves_cadera_derecha, cadera_derecha_Z, cadera_derecha_Y, cadera_derecha_X = procesar_articulacion(
-        Hip_to_femur_Right, "Cadera Derecha", heel_r, (-20, 60))
-    curvas_cadera_derecha = pd.DataFrame(curves_cadera_derecha)
-
-    # Procesar Cadera Izquierda
-    curves_cadera_izquierda, cadera_izquierda_Z, cadera_izquierda_Y, cadera_izquierda_X = procesar_articulacion(
-        Hip_to_femur_Left, "Cadera Izquierda", heel_l, (-20, 60))
-    curvas_cadera_izquierda = pd.DataFrame(curves_cadera_izquierda)
+    # Filtrar ciclos
+    filtered_indices_right, filtered_times_right = exclude_cycles(min_indices_right, markers.time[min_indices_right], excluded_cycles_right)
+    filtered_indices_left, filtered_times_left = exclude_cycles(min_indices_left, markers.time[min_indices_left], excluded_cycles_left)
     
 
-    # Calcular el vector dir y su componente z
-    tiempos = origen_hip_right.shape[0]  # Suponiendo que las coordenadas están en la forma (tiempos, 3)
+    # Segmentación de la marcha
     dir = ASIS_der - mid_ASIS
-    z_value_dir = dir[:, 2]  # Selecciona todos los valores de la tercera columna
-
-    # Identificar los cambios de signo en z_value_dir
+    z_value_dir = dir[:, 2]
     cambios_de_signo = np.where(np.diff(np.sign(z_value_dir)) != 0)[0] + 1
+    segmentos = np.split(np.arange(len(markers.time)), cambios_de_signo)
 
-    # Segmentar los tiempos en función de los cambios de signo
-    segmentos = np.split(np.arange(tiempos), cambios_de_signo)
+    # Eliminar último paso de cada segmento
+    filtered_indices_right, filtered_indices_left, filtered_times_right, filtered_times_left, \
+    final_cycles_right, final_cycles_left, excluded_cycles_right, excluded_cycles_left = eliminar_ultimo_paso(
+        filtered_indices_right, filtered_indices_left, filtered_times_right, filtered_times_left,
+        final_cycles_right, final_cycles_left, excluded_cycles_right, excluded_cycles_left,
+        markers.time, segmentos
+    )
+
+    # Procesar todas las articulaciones
+    curvas_tobillo_derecho, _, _, _ = procesar_articulacion(Tibia_to_calcaneus_Right, "Tobillo Derecho", (-30, 30), filtered_indices_right)
+    curvas_tobillo_izquierdo, _, _, _ = procesar_articulacion(Tibia_to_calcaneus_Left, "Tobillo Izquierdo", (-30, 30), filtered_indices_left)
+    
+    # Procesar todas las articulaciones
+    curvas_rodilla_derecha, _, _, _ = procesar_articulacion(Femur_to_tibia_Right, "Rodilla Derecha", (-20, 70), filtered_indices_right)
+    curvas_rodilla_izquierda, _, _, _ = procesar_articulacion(Femur_to_tibia_Left, "Rodilla Izquierda", (-20, 70), filtered_indices_left)
+
+    # Procesar todas las articulaciones
+    curvas_cadera_derecha, _, _, _ = procesar_articulacion(Hip_to_femur_Right, "Cadera Derecha", (-20, 60), filtered_indices_right)
+    curvas_cadera_izquierda, _, _, _ = procesar_articulacion(Hip_to_femur_Left, "Cadera Izquierda", (-20, 60), filtered_indices_left)
+        
+
     
 
 
-    # Función para calcular los parámetros espaciotemporales
-    def calcular_parametros_espaciotemporales(heel_y_right, heel_y_left, time, heel_x_right, heel_x_left, segmentos):
-        # Detectar mínimos locales (eventos de contacto inicial) para ambos
-        min_indices_right = argrelextrema(heel_y_right, np.less, order=20)[0]
-        min_indices_left = argrelextrema(heel_y_left, np.less, order=20)[0]
-
-        min_times_right = time[min_indices_right]
-        min_times_left = time[min_indices_left]
-
-        # Excluir ciclos
-        excluded_cycles_right = find_cycles_to_exclude(heel_y_right, time, min_indices_right, threshold_time=0.4, threshold_shape=0.3, threshold_shape1=0.3)
-        excluded_cycles_left = find_cycles_to_exclude(heel_y_left, time, min_indices_left, threshold_time=0.4, threshold_shape=0.3, threshold_shape1=0.3)
-
-        # Excluir ciclos para el talón derecho
-        filtered_indices_right, filtered_times_right = exclude_cycles(min_indices_right, min_times_right, excluded_cycles_right)
-        # Excluir ciclos para el talón izquierdo
-        filtered_indices_left, filtered_times_left = exclude_cycles(min_indices_left, min_times_left, excluded_cycles_left)
-
-        # Calcular la duración y longitud de los ciclos no excluidos (derecho)
-        durations_right = filtered_times_right[:, 1] - filtered_times_right[:, 0]
-        lengths_right = [abs(heel_x_right[fin] - heel_x_right[inicio]) for inicio, fin in filtered_indices_right]
-
-        # Calcular el tiempo promedio y la longitud promedio de los ciclos derechos
-        average_duration_right = np.mean(durations_right)
-        average_length_right = np.mean(lengths_right)
-
-        # Calcular la duración y longitud de los ciclos no excluidos (izquierdo)
-        durations_left = filtered_times_left[:, 1] - filtered_times_left[:, 0]
-        lengths_left = [abs(heel_x_left[fin] - heel_x_left[inicio]) for inicio, fin in filtered_indices_left]
-
-        # Calcular el tiempo promedio y la longitud promedio de los ciclos izquierdos
-        average_duration_left = np.mean(durations_left)
-        average_length_left = np.mean(lengths_left)
-
-
+    # --- Cálculo de parámetros espaciotemporales ---
+    def calcular_parametros_espaciotemporales():
+        """Calcula todos los parámetros espaciotemporales"""
+        # Duración y longitud de ciclos
+        durations_right = [t[1]-t[0] for t in filtered_times_right]
+        durations_left = [t[1]-t[0] for t in filtered_times_left]
         
-
-        # Calcular pasos
+        heel_x_right = markers.data["Rashel:RHeel"][:, 0]
+        heel_x_left = markers.data["Rashel:LHeel"][:, 0]
+        lengths_right = [abs(heel_x_right[fin]-heel_x_right[inicio]) for inicio, fin in filtered_indices_right]
+        lengths_left = [abs(heel_x_left[fin]-heel_x_left[inicio]) for inicio, fin in filtered_indices_left]
+        
+        # Cálculo de pasos
         all_steps = []
         for segmento in segmentos:
-            steps = calculate_steps(segmento, filtered_indices_right, filtered_indices_left, time, heel_x_right, heel_x_left)
-            all_steps.append(steps)
-
-        # Calcular el tiempo promedio y la longitud promedio de los pasos para todos los segmentos
-        all_tiempos_paso = [step[2] for steps in all_steps for step in steps]
-        all_longitudes_paso = [step[3] for steps in all_steps for step in steps]
-
-        if len(all_tiempos_paso) > 0:
-            tiempo_promedio_paso = np.mean(all_tiempos_paso)
-            longitud_promedio_paso = np.mean(all_longitudes_paso)
-        else:
-            tiempo_promedio_paso = 0
-            longitud_promedio_paso = 0
-
-        # Calcular la velocidad y la cadencia
-        velocidad = longitud_promedio_paso * 1000 / (tiempo_promedio_paso * 60 * 60)
-        frecuencia_paso = len(all_tiempos_paso) / sum(all_tiempos_paso) if sum(all_tiempos_paso) > 0 else 0
-        frecuencia_paso_pm = frecuencia_paso * 60
-
+            steps = calculate_steps(segmento, filtered_indices_right, filtered_indices_left, 
+                                  markers.time, heel_x_right, heel_x_left)
+            all_steps.extend(steps)
+        
+        # Parámetros finales
+        tiempo_promedio_paso = np.mean([s[2] for s in all_steps]) if all_steps else 0
+        longitud_promedio_paso = np.mean([s[3] for s in all_steps]) if all_steps else 0
+        velocidad = longitud_promedio_paso * 1000 / (tiempo_promedio_paso * 60 * 60) if tiempo_promedio_paso else 0
+        cadencia = (len(all_steps) / sum(s[2] for s in all_steps)) * 60 if all_steps and sum(s[2] for s in all_steps) else 0
+        
         return {
-            "average_duration_right": average_duration_right,
-            "average_length_right": average_length_right,
-            "average_duration_left": average_duration_left,
-            "average_length_left": average_length_left,
-            "tiempo_promedio_paso": tiempo_promedio_paso,
-            "longitud_promedio_paso": longitud_promedio_paso,
+            "duracion_ciclo_derecho": np.mean(durations_right),
+            "duracion_ciclo_izquierdo": np.mean(durations_left),
+            "longitud_ciclo_derecho": np.mean(lengths_right),
+            "longitud_ciclo_izquierdo": np.mean(lengths_left),
+            "tiempo_paso": tiempo_promedio_paso,
+            "longitud_paso": longitud_promedio_paso,
             "velocidad": velocidad,
-            "cadencia": frecuencia_paso_pm
+            "cadencia": cadencia,
+            "num_ciclos_derecho": len(filtered_indices_right),
+            "num_ciclos_izquierdo": len(filtered_indices_left),
+            "num_pasos": len(all_steps)
         }
 
-    # Obtener las coordenadas x de los talones
-    heel_x_right = markers.data["Rashel:RHeel"][:, 0]
-    heel_x_left = markers.data["Rashel:LHeel"][:, 0]
-
-    time = markers.time  # Tiempo correspondiente a los datos
-    heel_y_right = markers.data["Rashel:RHeel"][:, 1]  # Coordenada Y del talón derecho
-    heel_y_right = low_pass_filter(heel_y_right, cutoff, fs, order=3)
-
-    heel_y_left = markers.data["Rashel:LHeel"][:, 1]   # Coordenada Y del talón izquierdo
-    heel_y_left = low_pass_filter(heel_y_left, cutoff, fs, order=3)
-
-
-    # Calcular los parámetros espaciotemporales
-    parametros_espaciotemporales = calcular_parametros_espaciotemporales(heel_y_right, heel_y_left, time, heel_x_right, heel_x_left, segmentos)
-
+    parametros_espaciotemporales = calcular_parametros_espaciotemporales()
     # Devolver los datos cinemáticos y los parámetros espaciotemporales
     return (
-        curvas_tobillo_derecho, curvas_tobillo_izquierdo, curvas_rodilla_derecha, curvas_rodilla_izquierda,
-        curvas_cadera_derecha, curvas_cadera_izquierda, parametros_espaciotemporales
+        pd.DataFrame(curvas_tobillo_derecho), pd.DataFrame(curvas_tobillo_izquierdo),
+        pd.DataFrame(curvas_rodilla_derecha), pd.DataFrame(curvas_rodilla_izquierda),
+        pd.DataFrame(curvas_cadera_derecha), pd.DataFrame(curvas_cadera_izquierda),
+        parametros_espaciotemporales
     )
