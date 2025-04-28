@@ -690,7 +690,7 @@ def procesar_archivo_c3d( filename ):
         }
 
     parametros_espaciotemporales = calcular_parametros_espaciotemporales()
-    # Devolver los datos cinemáticos y los parámetros espaciotemporales
+
     return (
         pd.DataFrame(curvas_tobillo_derecho), pd.DataFrame(curvas_tobillo_izquierdo),
         pd.DataFrame(curvas_rodilla_derecha), pd.DataFrame(curvas_rodilla_izquierda),

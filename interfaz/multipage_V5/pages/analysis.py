@@ -77,6 +77,7 @@ layout = dbc.Container([
     dbc.Row(id='parametros-espaciotemporales-row')  # Nueva fila para los parámetros espaciotemporales
 ])
 
+
 @callback(
     Output('parametros-espaciotemporales-row', 'children'),
     Input('stored-data', 'data')
@@ -197,7 +198,6 @@ def update_parametros_espaciotemporales(stored_data):
             ])
         ], className="h-100"), width=4)
     ], className="mb-4")
-
 
 
 def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha", rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
@@ -461,4 +461,3 @@ def update_graphs(articulaciones, lado, stored_data):
         graphs.append(dbc.Col(dcc.Graph(figure=fig_x), width=4))
 
     return graphs
-
