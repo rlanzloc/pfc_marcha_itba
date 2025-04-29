@@ -46,5 +46,9 @@ app.layout = dbc.Container([
 ], fluid=True)
 
 
+#if __name__ == "__main__":
+#    app.run(debug=False)
+
 if __name__ == "__main__":
-    app.run(debug=False)
+    port = int(os.environ.get("PORT", 5000))  # Usa el puerto que Render asigna
+    app.run(host="0.0.0.0", port=port, debug=True)
