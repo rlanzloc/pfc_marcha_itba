@@ -17,4 +17,4 @@ COPY . .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Comando para ejecutar la app con Gunicorn
-CMD wsgi:server --workers 4 --bind 0.0.0.0:$PORT
+CMD gunicorn interfaz.multipage_V5.wsgi:server --workers 4 --bind 0.0.0.0:$PORT
