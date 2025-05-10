@@ -15,7 +15,7 @@ import datetime
 dash.register_page(__name__, name='Arduino read')
 # Configuración de los módulos Bluetooth
 
-bluetooth_serial_der = serial.Serial("COM15", 115200)  # Ajusta el puerto según sea necesario
+bluetooth_serial_der = serial.Serial("COM3", 115200)  # Ajusta el puerto según sea necesario
 # Configuración del módulo Bluetooth izquierdo (comentado para pruebas)
 # bluetooth_serial_izq = serial.Serial("COM4", 9600)  # Ajusta el puerto según sea necesario
 
