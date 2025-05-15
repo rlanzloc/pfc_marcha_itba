@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 import base64
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from analisis_marcha import procesar_archivo_c3d  # Importa la función de análisis
 import tempfile
 import os
@@ -27,9 +28,7 @@ layout = dbc.Container([
         dbc.Col([
             dcc.Upload(
                 id='upload-c3d',
-                children=html.Div([
-                    'Arrastra o selecciona un archivo C3D'
-                ]),
+                children=html.Div(['Arrastra o selecciona un archivo C3D']),
                 style={
                     'width': '100%',
                     'height': '60px',
@@ -45,22 +44,10 @@ layout = dbc.Container([
             html.Div(id='output-c3d-upload'),
         ])
     ]),
-    dbc.Row(id='controls-row', style={'display': 'none'}, children=[
-        dbc.Col([
-            dbc.Label("Selecciona las articulaciones:", className="mb-2",  style={"fontSize": "24px", "fontWeight": "bold"}),  # Título
-            dbc.Checklist(
-                id='articulacion-checklist',
-                options=[
-                    {'label': ' Tobillo', 'value': 'tobillo'},  # Espacio antes del texto
-                    {'label': ' Rodilla', 'value': 'rodilla'},
-                    {'label': ' Cadera', 'value': 'cadera'}
-                ],
-                value=['tobillo'],  # Valor por defecto
-                inline=True,  # Muestra los elementos en línea
-                style={'font-size': '22px', 'margin-right': '20px'}  # Tamaño de fuente y margen
-            )
-        ], width=12),  # Ocupa todo el ancho
-        dbc.Col([
+    # Nueva sección de pestañas
+    dcc.Tabs(id='tabs', value='tab-1', children=[
+        dcc.Tab(label='Análisis Cinemático', value='tab-1', children=[
+            # Mover el dropdown aquí
             dcc.Dropdown(
                 id='lado-dropdown',
                 options=[
@@ -68,14 +55,34 @@ layout = dbc.Container([
                     {'label': 'Izquierda', 'value': 'Izquierda'},
                     {'label': 'Ambos', 'value': 'Ambos'}
                 ],
-                value='Derecha',
+                value='Ambos',  # Valor predeterminado
                 clearable=False
-            )
-        ], width=6)
+            ),
+            html.Div(id='graphs-row'),  # Contenido para los gráficos
+        ]),
+        dcc.Tab(label='Parámetros Espaciotemporales', value='tab-2', children=[
+            html.Div(id='parametros-espaciotemporales-row')  # Contenido para los parámetros espaciotemporales
+        ])
     ]),
-    dbc.Row(id='graphs-row'),  # Fila para los gráficos
-    dbc.Row(id='parametros-espaciotemporales-row')  # Nueva fila para los parámetros espaciotemporales
+    html.Div(id='tabs-content')  # Contenido de las pestañas
 ])
+
+
+
+@callback(
+    Output('tabs-content', 'children'),
+    Input('tabs', 'value'),
+    Input('graphs-row', 'children'),
+    Input('parametros-espaciotemporales-row', 'children')
+)
+def update_tabs(selected_tab, graphs, parametros):
+    if selected_tab == 'tab-1':
+        return dbc.Row(graphs)  # Muestra los gráficos
+    elif selected_tab == 'tab-2':
+        return dbc.Row(parametros)  # Muestra los parámetros espaciotemporales
+
+
+
 
 
 @callback(
@@ -200,10 +207,14 @@ def update_parametros_espaciotemporales(stored_data):
     ], className="mb-4")
 
 
-def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha", rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
+def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha",
+                      rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
     """
     Grafica las curvas de una articulación según la posibilidad especificada usando Plotly.
+    Ahora con subplots integrados para los ejes Z, Y, X en un solo gráfico.
     """
+    from plotly.subplots import make_subplots
+
     # Verificar la posibilidad y asignar colores
     if posibilidad == "Derecha":
         colors = ["red"]
@@ -219,17 +230,26 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
         curvas = [curva_derecha, curva_izquierda]  # Ambas curvas
     else:
         raise ValueError("La posibilidad debe ser 'Derecha', 'Izquierda' o 'Ambos'.")
+
     light_color = {
         'red': 'rgba(255, 0, 0, 0.2)',  # Rojo claro (transparente)
         'blue': 'rgba(0, 0, 255, 0.2)',  # Azul claro (transparente)
     }
 
-    # Crear los gráficos para cada eje
-    fig_z = go.Figure()
-    fig_y = go.Figure()
-    fig_x = go.Figure()
+    # Crear la figura con 3 columnas y 1 fila
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=(
+            f"Ángulos de Z",
+            f"Ángulos de Y",
+            f"Ángulos de X"
+        ),
+        shared_yaxes=False
+    )
 
-    # Procesar y graficar según la posibilidad
+    # Para manejar la leyenda solo para el primer subplot
+    show_legend_on = True
+
     for curva, color, label in zip(curvas, colors, labels):
         if curva is not None:
             # Convertir las columnas Z, Y, X en arrays de NumPy
@@ -250,132 +270,80 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
             # Crear el tiempo normalizado (0% a 100%)
             fixed_time = np.linspace(0, 100, num=len(average_Z))
 
-            # Graficar para Z
-            fig_z.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Z,
-                line=dict(color=color),
-                name=f"{label}: Promedio"
-            ))
-            fig_z.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Z + std_Z,
-                fill=None,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False
-            ))
-            fig_z.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Z - std_Z,
-                fill='tonexty',
-                mode='lines',
-                line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar"
-            ))
+            # Función auxiliar para agregar trazas (avg y std) a subplot
+            def add_trace_with_std(row, col, average, std, axis_label):
+                # Promedio
+                fig.add_trace(go.Scatter(
+                    x=fixed_time,
+                    y=average,
+                    line=dict(color=color),
+                    name=f"{label}: Promedio" if show_legend_on else None,
+                    legendgroup=label,
+                    showlegend=show_legend_on
+                ), row=row, col=col)
+                # Std + (sin mostrar leyenda)
+                fig.add_trace(go.Scatter(
+                    x=fixed_time,
+                    y=average + std,
+                    fill=None,
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False
+                ), row=row, col=col)
+                # Std - (con fill para área entre líneas)
+                fig.add_trace(go.Scatter(
+                    x=fixed_time,
+                    y=average - std,
+                    fill='tonexty',
+                    mode='lines',
+                    line=dict(width=0),
+                    fillcolor=light_color[color],
+                    name=f"{label}: Desviación estándar" if show_legend_on else None,
+                    legendgroup=label,
+                    showlegend=show_legend_on
+                ), row=row, col=col)
 
-            # Graficar para Y
-            fig_y.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Y,
-                line=dict(color=color),
-                name=f"{label}: Promedio"
-            ))
-            fig_y.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Y + std_Y,
-                fill=None,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False
-            ))
-            fig_y.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Y - std_Y,
-                fill='tonexty',
-                mode='lines',
-                line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar"
-            ))
+            # Agregar las trazas para cada eje
+            add_trace_with_std(1, 1, average_Z, std_Z, "Z")
+            add_trace_with_std(1, 2, average_Y, std_Y, "Y")
+            add_trace_with_std(1, 3, average_X, std_X, "X")
 
-            # Graficar para X
-            fig_x.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_X,
-                line=dict(color=color),
-                name=f"{label}: Promedio"
-            ))
-            fig_x.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_X + std_X,
-                fill=None,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False
-            ))
-            fig_x.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_X - std_X,
-                fill='tonexty',
-                mode='lines',
-                line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar"
-            ))
+            # Solo mostrar la leyenda para el primer conjunto de datos
+            show_legend_on = False
 
-    # Configuración de los gráficos
-    fig_z.update_layout(
-        title=f"Articulación de {articulacion.capitalize()} - Ángulos de Z",
-        xaxis_title="Porcentaje del Ciclo de Marcha (%)",
-        yaxis_title="Ángulo en Z (°)",
-        yaxis_range=rango_z,
-        legend=dict(
-            orientation="h",  # Leyenda horizontal
-            yanchor="top",  # Anclada en la parte inferior
-            y=-0.3,  # Posición debajo del gráfico
-            xanchor="center",  # Centrada horizontalmente
-            x=0.5
-        )
-    )
-    fig_y.update_layout(
-        title=f"Articulación de {articulacion.capitalize()} - Ángulos de Y",
-        xaxis_title="Porcentaje del Ciclo de Marcha (%)",
-        yaxis_title="Ángulo en Y (°)",
-        yaxis_range=rango_y,
+    # Configuración de layout
+    fig.update_layout(
+        title_text=f"Articulación de {articulacion.capitalize()} - Ángulos por eje",
+        height=400,
+        width=1200,
         legend=dict(
             orientation="h",
-            yanchor="top",
-            y=-0.3,
+            yanchor="bottom",
+            y=1.02,
             xanchor="center",
             x=0.5
-        )
-    )
-    fig_x.update_layout(
-        title=f"Articulación de {articulacion.capitalize()} - Ángulos de X",
-        xaxis_title="Porcentaje del Ciclo de Marcha (%)",
-        yaxis_title="Ángulo en X (°)",
-        yaxis_range=rango_x,
-        legend=dict(
-            orientation="h",
-            yanchor="top",
-            y=-0.3,
-            xanchor="center",
-            x=0.5
-        )
+        ),
+        margin=dict(l=40, r=40, t=80, b=40)
     )
 
-    return fig_z, fig_y, fig_x
+    # Configuración ejes
+    fig.update_yaxes(title_text="Ángulo en Z (°)", range=rango_z, row=1, col=1)
+    fig.update_yaxes(title_text="Ángulo en Y (°)", range=rango_y, row=1, col=2)
+    fig.update_yaxes(title_text="Ángulo en X (°)", range=rango_x, row=1, col=3)
+
+    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=1)
+    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=2)
+    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=3)
+
+    return fig
+
 
 @callback(
     [Output('output-c3d-upload', 'children'),
-     Output('stored-data', 'data'),
-     Output('controls-row', 'style')],  # Mostrar/ocultar controles
+     Output('stored-data', 'data')],
     Input('upload-c3d', 'contents'),
     State('upload-c3d', 'filename')
 )
-
 def update_output(contents, filename):
     if contents is not None:
         results = {
@@ -385,7 +353,7 @@ def update_output(contents, filename):
             'rodilla_izquierda': [],
             'cadera_derecha': [],
             'cadera_izquierda': [],
-            'parametros_espaciotemporales': {}  # Nuevo campo para los parámetros espaciotemporales
+            'parametros_espaciotemporales': {}
         }
 
         content_type, content_string = contents.split(',')
@@ -412,20 +380,19 @@ def update_output(contents, filename):
             results['parametros_espaciotemporales'] = parametros_espaciotemporales
 
         except Exception as e:
-            return html.Div(f"Error al procesar el archivo {filename}: {str(e)}"), None, {'display': 'none'}
+            return html.Div(f"Error al procesar el archivo {filename}: {str(e)}"), None  # Solo dos valores
 
-        return html.Div(f"Archivo {filename} cargado correctamente."), results, {'display': 'block'}
-    return html.Div(), None, {'display': 'none'}
+        return html.Div(f"Archivo {filename} cargado correctamente."), results  # Solo dos valores
+
+    return html.Div(), None  # Solo dos valores
+
 
 @callback(
     Output('graphs-row', 'children'),
-    [Input('articulacion-checklist', 'value'),
-     Input('lado-dropdown', 'value'),
+    [Input('lado-dropdown', 'value'),
      Input('stored-data', 'data')]
 )
-
-
-def update_graphs(articulaciones, lado, stored_data):
+def update_graphs(lado, stored_data):
     if stored_data is None:
         return []
 
@@ -438,6 +405,9 @@ def update_graphs(articulaciones, lado, stored_data):
     curvas_cadera_izquierda = pd.DataFrame(stored_data['cadera_izquierda'])
 
     graphs = []
+
+    # Generar gráficos para todas las articulaciones
+    articulaciones = ['tobillo', 'rodilla', 'cadera']
     for articulacion in articulaciones:
         if articulacion == "tobillo":
             curva_derecha = curvas_tobillo_derecho
@@ -452,12 +422,15 @@ def update_graphs(articulaciones, lado, stored_data):
             curva_izquierda = curvas_cadera_izquierda
             rango_z, rango_y, rango_x = RANGOS_Y["cadera"].values()
 
-        # Generar los gráficos usando Plotly
-        fig_z, fig_y, fig_x = final_plot_plotly(curva_derecha, curva_izquierda, posibilidad=lado, rango_z=rango_z, rango_y=rango_y, rango_x=rango_x, articulacion=articulacion)
+        # Generar el gráfico combinado con subplots
+        fig = final_plot_plotly(curva_derecha, curva_izquierda, posibilidad=lado,
+                               rango_z=rango_z, rango_y=rango_y, rango_x=rango_x,
+                               articulacion=articulacion)
 
-        # Agregar los gráficos a la fila
-        graphs.append(dbc.Col(dcc.Graph(figure=fig_z), width=4))
-        graphs.append(dbc.Col(dcc.Graph(figure=fig_y), width=4))
-        graphs.append(dbc.Col(dcc.Graph(figure=fig_x), width=4))
+        # Agregar el gráfico combinado a la lista
+        graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))  # Usar ancho completo por gráfica integrada
 
+    # Retornar solo 3 gráficos combinados
     return graphs
+
+
