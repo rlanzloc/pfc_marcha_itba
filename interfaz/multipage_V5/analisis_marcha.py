@@ -355,6 +355,7 @@ def procesar_archivo_c3d( filename ):
 
 
     markers = ktk.read_c3d(filename)["Points"]
+    time = markers.time 
 
     #LAS DEFINICIONES LAS HACEMOS SIGUENDO EL PAPER
     #   Y  ^
@@ -645,7 +646,143 @@ def procesar_archivo_c3d( filename ):
     # Procesar todas las articulaciones
     curvas_cadera_derecha, _, _, _ = procesar_articulacion(Hip_to_femur_Right, "Cadera Derecha", (-20, 60), filtered_indices_right)
     curvas_cadera_izquierda, _, _, _ = procesar_articulacion(Hip_to_femur_Left, "Cadera Izquierda", (-20, 60), filtered_indices_left)
+
+
+    def calculate_steps_pie(segment, filtered_indices_right, filtered_indices_left, time,
+                        heel_x_right, heel_x_left, heel_z_right, heel_z_left):
+        """
+        Calcula los pasos dentro de un segmento.
+        Devuelve una lista de tuplas (indice_inicio, indice_fin, tiempo_paso, longitud_paso, ancho_paso_z, tipo_paso).
+        - tipo_paso: "derecho" (inicia con izquierdo) o "izquierdo" (inicia con derecho).
+        - ancho_paso_z: distancia en el eje Z entre los pies al inicio del paso.
+        """
+        steps = []
+        all_cycles = []
+
+        # Agregar ciclos derechos (inicio y fin)
+        for cycle in filtered_indices_right:
+            inicio, fin = cycle
+            if inicio in segment and fin in segment:
+                all_cycles.append((inicio, "right"))
+                all_cycles.append((fin, "right"))
+
+        # Agregar ciclos izquierdos (inicio y fin)
+        for cycle in filtered_indices_left:
+            inicio, fin = cycle
+            if inicio in segment and fin in segment:
+                all_cycles.append((inicio, "left"))
+                all_cycles.append((fin, "left"))
+
+        # Ordenar por tiempo (usando los índices para acceder a los tiempos)
+        all_cycles.sort(key=lambda x: time[x[0]])
+        unique_cycles = []
+        seen_indices = set()
+        for cycle in all_cycles:
+            if cycle[0] not in seen_indices:
+                unique_cycles.append(cycle)
+                seen_indices.add(cycle[0])
+
+        # Identificar pasos (alternancia right -> left o left -> right)
+        for i in range(len(unique_cycles) - 1):
+            current_idx, current_pie = unique_cycles[i]
+            next_idx, next_pie = unique_cycles[i + 1]
+
+            # Paso izquierdo: right -> left
+            if current_pie == "right" and next_pie == "left":
+                tiempo_paso = time[next_idx] - time[current_idx]
+                longitud_paso = abs(heel_x_left[next_idx] - heel_x_right[current_idx])
+                ancho_paso_z = abs(heel_z_left[next_idx] - heel_z_right[current_idx])
+                steps.append((current_idx, next_idx, tiempo_paso, longitud_paso, ancho_paso_z, "izquierdo"))
+
+            # Paso derecho: left -> right
+            elif current_pie == "left" and next_pie == "right":
+                tiempo_paso = time[next_idx] - time[current_idx]
+                longitud_paso = abs(heel_x_right[next_idx] - heel_x_left[current_idx])
+                ancho_paso_z = abs(heel_z_right[next_idx] - heel_z_left[current_idx])
+                steps.append((current_idx, next_idx, tiempo_paso, longitud_paso, ancho_paso_z, "derecho"))
+
+        return steps
+    
+    # Calcular promedios
+    def calcular_promedios(pasos):
+        if not pasos:
+            return 0.0, 0.0, 0.0
+        tiempos = [paso[2] for paso in pasos]
+        longitudes = [paso[3] for paso in pasos]
+        anchos_z = [paso[4] for paso in pasos]
+
+        return np.mean(tiempos), np.mean(longitudes), np.mean(anchos_z)
+    
+    def calcular_totales(all_steps):
+        """
+        Calcula:
+        - Tiempo total: suma de todos los tiempos de paso individuales.
+        - Longitud total: suma de todas las longitudes de paso.
+        - Cantidad total de pasos.
+        """
+        if not all_steps:
+            return 0.0, 0.0, 0
+
+        # Aplanar la lista de pasos (todos los segmentos juntos)
+        pasos_totales = [paso for segmento in all_steps for paso in segmento]
+
+        tiempo_total = sum(paso[2] for paso in pasos_totales)  # Suma de tiempos de paso
+        longitud_total = sum(paso[3] for paso in pasos_totales)  # Suma de longitudes
+        cantidad_pasos = len(pasos_totales)  # Total de pasos
+
+        return tiempo_total, longitud_total, cantidad_pasos
+    
+    def calculate_gait_phases(filtered_indices, min_times_toe, time, side):
+        """
+        Calcula los tiempos de apoyo y balanceo para cada ciclo
+        """
+        phases_data = []
+
+        for i, cycle in enumerate(filtered_indices):
+            inicio, fin = cycle
+            ciclo_times = time[inicio:fin + 1]
+            ciclo_duration = ciclo_times[-1] - ciclo_times[0]
+
+            # Encontrar el mínimo local dentro del ciclo
+            ciclo_min_times = [t for t in min_times_toe if inicio <= np.where(time == t)[0][0] <= fin]
+
+            if len(ciclo_min_times) > 0:
+                min_time = ciclo_min_times[0]
+
+                # Calcular tiempos de balanceo (antes del mínimo) y apoyo (después del mínimo)
+                swing_time = min_time - ciclo_times[0]
+                stance_time = ciclo_times[-1] - min_time
+
+                # Calcular porcentajes
+                swing_percent = (swing_time / ciclo_duration) * 100
+                stance_percent = (stance_time / ciclo_duration) * 100
+
+                phases_data.append({
+                    'cycle': i + 1,
+                    'duration': ciclo_duration,
+                    'swing_time': swing_time,
+                    'stance_time': stance_time,
+                    'swing_percent': swing_percent,
+                    'stance_percent': stance_percent
+                })
+
+        return phases_data
+    # Función para imprimir los resultados
+    def print_phases_results(phases_data, side):
         
+
+        if not phases_data:
+            return
+
+
+        # Calcular promedios
+        avg_duration = np.mean([p['duration'] for p in phases_data])
+        avg_swing = np.mean([p['swing_time'] for p in phases_data])
+        avg_stance = np.mean([p['stance_time'] for p in phases_data])
+        avg_swing_percent = np.mean([p['swing_percent'] for p in phases_data])
+        avg_stance_percent = np.mean([p['stance_percent'] for p in phases_data])
+
+        return avg_swing, avg_stance, avg_swing_percent, avg_stance_percent
 
     
 
@@ -656,37 +793,102 @@ def procesar_archivo_c3d( filename ):
         # Duración y longitud de ciclos
         durations_right = [t[1]-t[0] for t in filtered_times_right]
         durations_left = [t[1]-t[0] for t in filtered_times_left]
-        
+       
         heel_x_right = markers.data["Rashel:RHeel"][:, 0]
         heel_x_left = markers.data["Rashel:LHeel"][:, 0]
         lengths_right = [abs(heel_x_right[fin]-heel_x_right[inicio]) for inicio, fin in filtered_indices_right]
         lengths_left = [abs(heel_x_left[fin]-heel_x_left[inicio]) for inicio, fin in filtered_indices_left]
         
         # Cálculo de pasos
+    
+        #Coordenadas en z
+        heel_z_right = markers.data["Rashel:RHeel"][:, 2]
+        heel_z_left = markers.data["Rashel:LHeel"][:, 2]
+
         all_steps = []
-        for segmento in segmentos:
-            steps = calculate_steps(segmento, filtered_indices_right, filtered_indices_left, 
-                                  markers.time, heel_x_right, heel_x_left)
-            all_steps.extend(steps)
+
+        for i, segmento in enumerate(segmentos):
+            steps = calculate_steps_pie(segmento, filtered_indices_right, filtered_indices_left, time,
+                                heel_x_right, heel_x_left, heel_z_right, heel_z_left)
+            all_steps.append(steps)
+
+
+        # Separar pasos derechos e izquierdos
+        pasos_derechos = [step for steps in all_steps for step in steps if step[5] == "derecho"]
+        pasos_izquierdos = [step for steps in all_steps for step in steps if step[5] == "izquierdo"]
+
+
+
+        tiempo_prom_derecho, longitud_prom_derecho, ancho_z_prom_derecho = calcular_promedios(pasos_derechos)
+        tiempo_prom_izquierdo, longitud_prom_izquierdo, ancho_z_prom_izquierdo = calcular_promedios(pasos_izquierdos)
+
+        tiempo_total, longitud_total, total_pasos = calcular_totales(all_steps)
+        # Cálculo de velocidad y cadencia global
+        if tiempo_total > 0:
+            velocidad_global = longitud_total / tiempo_total  # m/s
+            cadencia_global = (total_pasos / tiempo_total) * 60  # pasos/min
+        else:
+            velocidad_global = 0.0
+            cadencia_global = 0.0
+
+        cutoff = 15
+        fs = 100
+
         
-        # Parámetros finales
-        tiempo_promedio_paso = np.mean([s[2] for s in all_steps]) if all_steps else 0
-        longitud_promedio_paso = np.mean([s[3] for s in all_steps]) if all_steps else 0
-        velocidad = longitud_promedio_paso * 1000 / (tiempo_promedio_paso * 60 * 60) if tiempo_promedio_paso else 0
-        cadencia = (len(all_steps) / sum(s[2] for s in all_steps)) * 60 if all_steps and sum(s[2] for s in all_steps) else 0
+        toe_y_right = markers.data["Rashel:RToeIn"][:, 1]  # Coordenada Y del talón derecho
+        toe_y_right = low_pass_filter(toe_y_right, cutoff, fs, order=3)
+
+        toe_y_left = markers.data["Rashel:LToeIn"][:, 1]   # Coordenada Y del talón izquierdo
+        toe_y_left = low_pass_filter(toe_y_left, cutoff, fs, order=3)
+
+    
+
+
+
+        # Detectar mínimos locales
+        R_toe_min_indices = argrelextrema(toe_y_right, np.less, order=30)[0]
+        L_toe_min_indices = argrelextrema(toe_y_left, np.less, order=30)[0]
+
+        # Obtener los tiempos de los mínimos locales
+        R_min_times_toe = time[R_toe_min_indices]
+        L_min_times_toe = time[L_toe_min_indices]
+
+        # Calcular fases para ambos pies
+        right_phases = calculate_gait_phases(filtered_indices_right, R_min_times_toe, time, "derecho")
+        left_phases = calculate_gait_phases(filtered_indices_left, L_min_times_toe, time, "izquierdo")
+
+        avg_swing_der, avg_stance_der, avg_swing_percent_der, avg_stance_percent_der = print_phases_results(right_phases, "derecho")
+        avg_swing_izq, avg_stance_izq, avg_swing_percent_izq, avg_stance_percent_izq = print_phases_results(left_phases, "izquierdo")
+
+
+
+
+
         
         return {
             "duracion_ciclo_derecho": np.mean(durations_right),
             "duracion_ciclo_izquierdo": np.mean(durations_left),
             "longitud_ciclo_derecho": np.mean(lengths_right),
             "longitud_ciclo_izquierdo": np.mean(lengths_left),
-            "tiempo_paso": tiempo_promedio_paso,
-            "longitud_paso": longitud_promedio_paso,
-            "velocidad": velocidad,
-            "cadencia": cadencia,
+            "tiempo_paso_derecho": tiempo_prom_derecho,
+            "longitud_paso_derecho": longitud_prom_derecho,
+            "ancho_paso_derecho": ancho_z_prom_derecho,
+            "tiempo_paso_izquierdo": tiempo_prom_izquierdo,
+            "longitud_paso_izquierdo": longitud_prom_izquierdo,
+            "ancho_paso_izquierdo": ancho_z_prom_izquierdo,
+            "velocidad": velocidad_global,
+            "cadencia": cadencia_global,
             "num_ciclos_derecho": len(filtered_indices_right),
             "num_ciclos_izquierdo": len(filtered_indices_left),
-            "num_pasos": len(all_steps)
+            "num_pasos": len(all_steps),
+            "tiempo_balanceo_derecho": avg_swing_der, 
+            "tiempo_apoyo_derecho": avg_stance_der, 
+            "tiempo_balanceo_izquierdo": avg_swing_izq, 
+            "tiempo_apoyo_izquierdo": avg_stance_izq, 
+            "balanceo_derecho": avg_swing_percent_der, 
+            "apoyo_derecho": avg_stance_percent_der, 
+            "balanceo_izquierdo": avg_swing_percent_izq, 
+            "apoyo_izquierdo": avg_stance_percent_izq
         }
 
     parametros_espaciotemporales = calcular_parametros_espaciotemporales()

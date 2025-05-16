@@ -39,15 +39,28 @@ layout = dbc.Container([
                     'textAlign': 'center',
                     'margin': '10px'
                 },
-                multiple=False  # Permitir solo un archivo
+                multiple=False
             ),
             html.Div(id='output-c3d-upload'),
         ])
     ]),
-    # Nueva sección de pestañas
-    dcc.Tabs(id='tabs', value='tab-1', children=[
+    # Contenedor para las tabs que solo se muestra cuando hay datos
+    html.Div(id='tabs-container', style={'display': 'none'})
+])
+
+# Callback para mostrar/ocultar las tabs según si hay datos
+@callback(
+    Output('tabs-container', 'children'),
+    Output('tabs-container', 'style'),
+    Input('stored-data', 'data')
+)
+
+def show_hide_tabs(stored_data):
+    if stored_data is None:
+        return None, {'display': 'none'}
+    
+    tabs = dcc.Tabs(id='tabs', value='tab-1', children=[
         dcc.Tab(label='Análisis Cinemático', value='tab-1', children=[
-            # Mover el dropdown aquí
             dcc.Dropdown(
                 id='lado-dropdown',
                 options=[
@@ -55,70 +68,45 @@ layout = dbc.Container([
                     {'label': 'Izquierda', 'value': 'Izquierda'},
                     {'label': 'Ambos', 'value': 'Ambos'}
                 ],
-                value='Ambos',  # Valor predeterminado
+                value='Ambos',
                 clearable=False
             ),
-            html.Div(id='graphs-row'),  # Contenido para los gráficos
+            html.Div(id='graphs-container')
         ]),
         dcc.Tab(label='Parámetros Espaciotemporales', value='tab-2', children=[
-            html.Div(id='parametros-espaciotemporales-row')  # Contenido para los parámetros espaciotemporales
+            html.Div(id='parametros-container')
         ])
-    ]),
-    html.Div(id='tabs-content')  # Contenido de las pestañas
-])
-
-
-
-@callback(
-    Output('tabs-content', 'children'),
-    Input('tabs', 'value'),
-    Input('graphs-row', 'children'),
-    Input('parametros-espaciotemporales-row', 'children')
-)
-def update_tabs(selected_tab, graphs, parametros):
-    if selected_tab == 'tab-1':
-        return dbc.Row(graphs)  # Muestra los gráficos
-    elif selected_tab == 'tab-2':
-        return dbc.Row(parametros)  # Muestra los parámetros espaciotemporales
-
-
-
+    ])
+    
+    return tabs, {'display': 'block'}
 
 
 @callback(
-    Output('parametros-espaciotemporales-row', 'children'),
+    Output('parametros-container', 'children'),
     Input('stored-data', 'data')
 )
+
 def update_parametros_espaciotemporales(stored_data):
     if stored_data is None or 'parametros_espaciotemporales' not in stored_data:
         return []
     
     parametros = stored_data['parametros_espaciotemporales']
     
-    # Determinar el rango máximo para la escala común
-    max_duracion = max(parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'], parametros['tiempo_paso'])
-    max_longitud = max(parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'], parametros['longitud_paso'])
-    
     # Función para crear gráficos de barras con escala consistente
-    def crear_grafico_barras(valores, titulo, colores, max_valor):
+    def crear_grafico_barras(valores, titulo, colores, max_valor=None, unidades=""):
         fig = go.Figure()
         
-        # Para pasos (una sola barra)
-        if len(valores) == 1:
-            fig.add_trace(go.Bar(
-                x=['Paso'],
-                y=valores,
-                marker_color=['#9E9E9E'],  # Gris
-                text=[f"{valores[0]:.2f}"],
-                textposition='auto'
-            ))
-        # Para ciclos (dos barras)
-        else:
+        # Si no se especifica max_valor, calcularlo de los valores
+        if max_valor is None:
+            max_valor = max(valores) * 1.2 if valores else 1
+        
+        # Para pasos (dos barras)
+        if len(valores) == 2:
             fig.add_trace(go.Bar(
                 x=['Derecho', 'Izquierdo'],
                 y=valores,
                 marker_color=colores,
-                text=[f"{v:.2f}" for v in valores],
+                text=[f"{v:.2f}{unidades}" for v in valores],
                 textposition='auto'
             ))
         
@@ -136,75 +124,132 @@ def update_parametros_espaciotemporales(stored_data):
         )
         return dcc.Graph(figure=fig, config={'staticPlot': True}, style={'height': '150px'})
     
-    # Gráficos para ciclos (dos barras)
-    duracion_fig = crear_grafico_barras(
-        [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
-        "Duración (s)",
-        ['#FF5252', '#4285F4'],  # Rojo y azul
-        max_duracion
-    )
+    # Determinar rangos máximos para escalas consistentes
+    max_duracion = max(parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'], 
+                      parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo'],
+                      parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo'],
+                      parametros['tiempo_apoyo_derecho'], parametros['tiempo_apoyo_izquierdo'])
     
-    longitud_fig = crear_grafico_barras(
-        [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
-        "Longitud (m)",
-        ['#FF5252', '#4285F4'],  # Rojo y azul
-        max_longitud
-    )
+    max_longitud = max(parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'],
+                     parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo'])
     
-    # Gráficos para pasos (una barra gris)
-    paso_duracion_fig = crear_grafico_barras(
-        [parametros['tiempo_paso']],
-        "Duración paso (s)",
-        None,
-        max_duracion
-    )
+    max_ancho = max(parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo'])
+    max_porcentaje = 100  # Para los porcentajes de balanceo/apoyo
     
-    paso_longitud_fig = crear_grafico_barras(
-        [parametros['longitud_paso']],
-        "Longitud paso (m)",
-        None,
-        max_longitud
-    )
+    # Colores para derecha/izquierda
+    colores_lados = ['#FF5252', '#4285F4']  # Rojo y azul
     
     return dbc.Row([
-        # Tarjeta para ciclos
-        dbc.Col(dbc.Card([
-            dbc.CardHeader(html.H4("Ciclos de Marcha", className="text-center mb-0")),
-            dbc.CardBody([
-                html.H5(f"Número: {parametros['num_ciclos_derecho']}D / {parametros['num_ciclos_izquierdo']}I", 
-                        className="text-center mb-3"),
-                duracion_fig,
-                longitud_fig
-            ])
-        ], className="h-100"), width=4),
-        
-        # Tarjeta para pasos
-        dbc.Col(dbc.Card([
-            dbc.CardHeader(html.H4("Pasos", className="text-center mb-0")),
-            dbc.CardBody([
-                html.H5(f"Número: {parametros['num_pasos']}", className="text-center mb-3"),
-                paso_duracion_fig,
-                paso_longitud_fig
-            ])
-        ], className="h-100"), width=4),
-        
-        # Tarjeta para velocidad y cadencia
-        dbc.Col(dbc.Card([
-            dbc.CardHeader(html.H4("Otros Parámetros", className="text-center mb-0")),
-            dbc.CardBody([
-                html.Div([
-                    html.Div([
-                        html.P("Velocidad:", className="mb-1"),
-                        html.P(f"{parametros['velocidad']:.2f} km/h", className="h4 text-primary")
-                    ], className="text-center mb-3"),
-                    html.Div([
-                        html.P("Cadencia:", className="mb-1"),
-                        html.P(f"{parametros['cadencia']:.2f} pasos/min", className="h4 text-primary")
-                    ], className="text-center")
+        # Primera fila de cards
+        dbc.Row([
+            # Tarjeta para ciclos
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Ciclos de Marcha", className="text-center mb-0")),
+                dbc.CardBody([
+                    html.H5(f"Número: {parametros['num_ciclos_derecho']}D / {parametros['num_ciclos_izquierdo']}I", 
+                            className="text-center mb-3"),
+                    crear_grafico_barras(
+                        [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
+                        "Duración (s)",
+                        colores_lados,
+                        max_duracion
+                    ),
+                    crear_grafico_barras(
+                        [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
+                        "Longitud (m)",
+                        colores_lados,
+                        max_longitud
+                    )
                 ])
-            ])
-        ], className="h-100"), width=4)
-    ], className="mb-4")
+            ], className="h-100"), width=4),
+            
+            # Tarjeta para pasos
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Pasos", className="text-center mb-0")),
+                dbc.CardBody([
+                    html.H5(f"Número: {parametros['num_pasos']}", className="text-center mb-3"),
+                    crear_grafico_barras(
+                        [parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo']],
+                        "Duración (s)",
+                        colores_lados,
+                        max_duracion
+                    ),
+                    crear_grafico_barras(
+                        [parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo']],
+                        "Longitud (m)",
+                        colores_lados,
+                        max_longitud
+                    ),
+                    crear_grafico_barras(
+                        [parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo']],
+                        "Ancho (m)",
+                        colores_lados,
+                        max_ancho
+                    )
+                ])
+            ], className="h-100"), width=4),
+            
+            # Tarjeta para velocidad y cadencia
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Velocidad y Cadencia", className="text-center mb-0")),
+                dbc.CardBody([
+                    html.Div([
+                        html.Div([
+                            html.P("Velocidad:", className="mb-1"),
+                            html.P(f"{parametros['velocidad']:.2f} m/s", className="h4 text-primary")
+                        ], className="text-center mb-3"),
+                        html.Div([
+                            html.P("Cadencia:", className="mb-1"),
+                            html.P(f"{parametros['cadencia']:.2f} pasos/min", className="h4 text-primary")
+                        ], className="text-center")
+                    ])
+                ])
+            ], className="h-100"), width=4)
+        ], className="mb-4"),
+        
+        # Segunda fila de cards
+        dbc.Row([
+            # Tarjeta para tiempos de balanceo y apoyo
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Tiempos de Balanceo y Apoyo", className="text-center mb-0")),
+                dbc.CardBody([
+                    crear_grafico_barras(
+                        [parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo']],
+                        "Tiempo Balanceo (s)",
+                        colores_lados,
+                        max_duracion
+                    ),
+                    crear_grafico_barras(
+                        [parametros['tiempo_apoyo_derecho'], parametros['tiempo_apoyo_izquierdo']],
+                        "Tiempo Apoyo (s)",
+                        colores_lados,
+                        max_duracion
+                    )
+                ])
+            ], className="h-100"), width=6),
+            
+            # Tarjeta para porcentajes de balanceo y apoyo
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Porcentajes de Balanceo y Apoyo", className="text-center mb-0")),
+                dbc.CardBody([
+                    crear_grafico_barras(
+                        [parametros['balanceo_derecho'], parametros['balanceo_izquierdo']],
+                        "% Balanceo",
+                        colores_lados,
+                        max_porcentaje,
+                        "%"
+                    ),
+                    crear_grafico_barras(
+                        [parametros['apoyo_derecho'], parametros['apoyo_izquierdo']],
+                        "% Apoyo",
+                        colores_lados,
+                        max_porcentaje,
+                        "%"
+                    )
+                ])
+            ], className="h-100"), width=6)
+        ])
+    ])
 
 
 def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha",
@@ -338,6 +383,9 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
     return fig
 
 
+
+
+
 @callback(
     [Output('output-c3d-upload', 'children'),
      Output('stored-data', 'data')],
@@ -387,8 +435,10 @@ def update_output(contents, filename):
     return html.Div(), None  # Solo dos valores
 
 
+
+
 @callback(
-    Output('graphs-row', 'children'),
+    Output('graphs-container', 'children'),
     [Input('lado-dropdown', 'value'),
      Input('stored-data', 'data')]
 )
