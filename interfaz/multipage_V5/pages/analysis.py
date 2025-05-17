@@ -4,6 +4,7 @@ import dash_bootstrap_components as dbc
 import base64
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from analisis_marcha import procesar_archivo_c3d  # Importa la función de análisis
 import tempfile
 import os
@@ -27,9 +28,7 @@ layout = dbc.Container([
         dbc.Col([
             dcc.Upload(
                 id='upload-c3d',
-                children=html.Div([
-                    'Arrastra o selecciona un archivo C3D'
-                ]),
+                children=html.Div(['Arrastra o selecciona un archivo C3D']),
                 style={
                     'width': '100%',
                     'height': '60px',
@@ -40,27 +39,28 @@ layout = dbc.Container([
                     'textAlign': 'center',
                     'margin': '10px'
                 },
-                multiple=False  # Permitir solo un archivo
+                multiple=False
             ),
             html.Div(id='output-c3d-upload'),
         ])
     ]),
-    dbc.Row(id='controls-row', style={'display': 'none'}, children=[
-        dbc.Col([
-            dbc.Label("Selecciona las articulaciones:", className="mb-2",  style={"fontSize": "24px", "fontWeight": "bold"}),  # Título
-            dbc.Checklist(
-                id='articulacion-checklist',
-                options=[
-                    {'label': ' Tobillo', 'value': 'tobillo'},  # Espacio antes del texto
-                    {'label': ' Rodilla', 'value': 'rodilla'},
-                    {'label': ' Cadera', 'value': 'cadera'}
-                ],
-                value=['tobillo'],  # Valor por defecto
-                inline=True,  # Muestra los elementos en línea
-                style={'font-size': '22px', 'margin-right': '20px'}  # Tamaño de fuente y margen
-            )
-        ], width=12),  # Ocupa todo el ancho
-        dbc.Col([
+    # Contenedor para las tabs que solo se muestra cuando hay datos
+    html.Div(id='tabs-container', style={'display': 'none'})
+])
+
+# Callback para mostrar/ocultar las tabs según si hay datos
+@callback(
+    Output('tabs-container', 'children'),
+    Output('tabs-container', 'style'),
+    Input('stored-data', 'data')
+)
+
+def show_hide_tabs(stored_data):
+    if stored_data is None:
+        return None, {'display': 'none'}
+    
+    tabs = dcc.Tabs(id='tabs', value='tab-1', children=[
+        dcc.Tab(label='Análisis Cinemático', value='tab-1', children=[
             dcc.Dropdown(
                 id='lado-dropdown',
                 options=[
@@ -68,50 +68,45 @@ layout = dbc.Container([
                     {'label': 'Izquierda', 'value': 'Izquierda'},
                     {'label': 'Ambos', 'value': 'Ambos'}
                 ],
-                value='Derecha',
+                value='Ambos',
                 clearable=False
-            )
-        ], width=6)
-    ]),
-    dbc.Row(id='graphs-row'),  # Fila para los gráficos
-    dbc.Row(id='parametros-espaciotemporales-row')  # Nueva fila para los parámetros espaciotemporales
-])
+            ),
+            html.Div(id='graphs-container')
+        ]),
+        dcc.Tab(label='Parámetros Espaciotemporales', value='tab-2', children=[
+            html.Div(id='parametros-container')
+        ])
+    ])
+    
+    return tabs, {'display': 'block'}
 
 
 @callback(
-    Output('parametros-espaciotemporales-row', 'children'),
+    Output('parametros-container', 'children'),
     Input('stored-data', 'data')
 )
+
 def update_parametros_espaciotemporales(stored_data):
     if stored_data is None or 'parametros_espaciotemporales' not in stored_data:
         return []
     
     parametros = stored_data['parametros_espaciotemporales']
     
-    # Determinar el rango máximo para la escala común
-    max_duracion = max(parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'], parametros['tiempo_paso'])
-    max_longitud = max(parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'], parametros['longitud_paso'])
-    
     # Función para crear gráficos de barras con escala consistente
-    def crear_grafico_barras(valores, titulo, colores, max_valor):
+    def crear_grafico_barras(valores, titulo, colores, max_valor=None, unidades=""):
         fig = go.Figure()
         
-        # Para pasos (una sola barra)
-        if len(valores) == 1:
-            fig.add_trace(go.Bar(
-                x=['Paso'],
-                y=valores,
-                marker_color=['#9E9E9E'],  # Gris
-                text=[f"{valores[0]:.2f}"],
-                textposition='auto'
-            ))
-        # Para ciclos (dos barras)
-        else:
+        # Si no se especifica max_valor, calcularlo de los valores
+        if max_valor is None:
+            max_valor = max(valores) * 1.2 if valores else 1
+        
+        # Para pasos (dos barras)
+        if len(valores) == 2:
             fig.add_trace(go.Bar(
                 x=['Derecho', 'Izquierdo'],
                 y=valores,
                 marker_color=colores,
-                text=[f"{v:.2f}" for v in valores],
+                text=[f"{v:.2f}{unidades}" for v in valores],
                 textposition='auto'
             ))
         
@@ -129,81 +124,142 @@ def update_parametros_espaciotemporales(stored_data):
         )
         return dcc.Graph(figure=fig, config={'staticPlot': True}, style={'height': '150px'})
     
-    # Gráficos para ciclos (dos barras)
-    duracion_fig = crear_grafico_barras(
-        [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
-        "Duración (s)",
-        ['#FF5252', '#4285F4'],  # Rojo y azul
-        max_duracion
-    )
+    # Determinar rangos máximos para escalas consistentes
+    max_duracion = max(parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'], 
+                      parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo'],
+                      parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo'],
+                      parametros['tiempo_apoyo_derecho'], parametros['tiempo_apoyo_izquierdo'])
     
-    longitud_fig = crear_grafico_barras(
-        [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
-        "Longitud (m)",
-        ['#FF5252', '#4285F4'],  # Rojo y azul
-        max_longitud
-    )
+    max_longitud = max(parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'],
+                     parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo'])
     
-    # Gráficos para pasos (una barra gris)
-    paso_duracion_fig = crear_grafico_barras(
-        [parametros['tiempo_paso']],
-        "Duración paso (s)",
-        None,
-        max_duracion
-    )
+    max_ancho = max(parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo'])
+    max_porcentaje = 100  # Para los porcentajes de balanceo/apoyo
     
-    paso_longitud_fig = crear_grafico_barras(
-        [parametros['longitud_paso']],
-        "Longitud paso (m)",
-        None,
-        max_longitud
-    )
+    # Colores para derecha/izquierda
+    colores_lados = ['#FF5252', '#4285F4']  # Rojo y azul
     
     return dbc.Row([
-        # Tarjeta para ciclos
-        dbc.Col(dbc.Card([
-            dbc.CardHeader(html.H4("Ciclos de Marcha", className="text-center mb-0")),
-            dbc.CardBody([
-                html.H5(f"Número: {parametros['num_ciclos_derecho']}D / {parametros['num_ciclos_izquierdo']}I", 
-                        className="text-center mb-3"),
-                duracion_fig,
-                longitud_fig
-            ])
-        ], className="h-100"), width=4),
-        
-        # Tarjeta para pasos
-        dbc.Col(dbc.Card([
-            dbc.CardHeader(html.H4("Pasos", className="text-center mb-0")),
-            dbc.CardBody([
-                html.H5(f"Número: {parametros['num_pasos']}", className="text-center mb-3"),
-                paso_duracion_fig,
-                paso_longitud_fig
-            ])
-        ], className="h-100"), width=4),
-        
-        # Tarjeta para velocidad y cadencia
-        dbc.Col(dbc.Card([
-            dbc.CardHeader(html.H4("Otros Parámetros", className="text-center mb-0")),
-            dbc.CardBody([
-                html.Div([
-                    html.Div([
-                        html.P("Velocidad:", className="mb-1"),
-                        html.P(f"{parametros['velocidad']:.2f} km/h", className="h4 text-primary")
-                    ], className="text-center mb-3"),
-                    html.Div([
-                        html.P("Cadencia:", className="mb-1"),
-                        html.P(f"{parametros['cadencia']:.2f} pasos/min", className="h4 text-primary")
-                    ], className="text-center")
+        # Primera fila de cards
+        dbc.Row([
+            # Tarjeta para ciclos
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Ciclos de Marcha", className="text-center mb-0")),
+                dbc.CardBody([
+                    html.H5(f"Número: {parametros['num_ciclos_derecho']}D / {parametros['num_ciclos_izquierdo']}I", 
+                            className="text-center mb-3"),
+                    crear_grafico_barras(
+                        [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
+                        "Duración (s)",
+                        colores_lados,
+                        max_duracion
+                    ),
+                    crear_grafico_barras(
+                        [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
+                        "Longitud (m)",
+                        colores_lados,
+                        max_longitud
+                    )
                 ])
-            ])
-        ], className="h-100"), width=4)
-    ], className="mb-4")
+            ], className="h-100"), width=4),
+            
+            # Tarjeta para pasos
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Pasos", className="text-center mb-0")),
+                dbc.CardBody([
+                    html.H5(f"Número: {parametros['num_pasos']}", className="text-center mb-3"),
+                    crear_grafico_barras(
+                        [parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo']],
+                        "Duración (s)",
+                        colores_lados,
+                        max_duracion
+                    ),
+                    crear_grafico_barras(
+                        [parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo']],
+                        "Longitud (m)",
+                        colores_lados,
+                        max_longitud
+                    ),
+                    crear_grafico_barras(
+                        [parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo']],
+                        "Ancho (m)",
+                        colores_lados,
+                        max_ancho
+                    )
+                ])
+            ], className="h-100"), width=4),
+            
+            # Tarjeta para velocidad y cadencia
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Velocidad y Cadencia", className="text-center mb-0")),
+                dbc.CardBody([
+                    html.Div([
+                        html.Div([
+                            html.P("Velocidad:", className="mb-1"),
+                            html.P(f"{parametros['velocidad']:.2f} m/s", className="h4 text-primary")
+                        ], className="text-center mb-3"),
+                        html.Div([
+                            html.P("Cadencia:", className="mb-1"),
+                            html.P(f"{parametros['cadencia']:.2f} pasos/min", className="h4 text-primary")
+                        ], className="text-center")
+                    ])
+                ])
+            ], className="h-100"), width=4)
+        ], className="mb-4"),
+        
+        # Segunda fila de cards
+        dbc.Row([
+            # Tarjeta para tiempos de balanceo y apoyo
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Tiempos de Balanceo y Apoyo", className="text-center mb-0")),
+                dbc.CardBody([
+                    crear_grafico_barras(
+                        [parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo']],
+                        "Tiempo Balanceo (s)",
+                        colores_lados,
+                        max_duracion
+                    ),
+                    crear_grafico_barras(
+                        [parametros['tiempo_apoyo_derecho'], parametros['tiempo_apoyo_izquierdo']],
+                        "Tiempo Apoyo (s)",
+                        colores_lados,
+                        max_duracion
+                    )
+                ])
+            ], className="h-100"), width=6),
+            
+            # Tarjeta para porcentajes de balanceo y apoyo
+            dbc.Col(dbc.Card([
+                dbc.CardHeader(html.H4("Porcentajes de Balanceo y Apoyo", className="text-center mb-0")),
+                dbc.CardBody([
+                    crear_grafico_barras(
+                        [parametros['balanceo_derecho'], parametros['balanceo_izquierdo']],
+                        "% Balanceo",
+                        colores_lados,
+                        max_porcentaje,
+                        "%"
+                    ),
+                    crear_grafico_barras(
+                        [parametros['apoyo_derecho'], parametros['apoyo_izquierdo']],
+                        "% Apoyo",
+                        colores_lados,
+                        max_porcentaje,
+                        "%"
+                    )
+                ])
+            ], className="h-100"), width=6)
+        ])
+    ])
 
 
-def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha", rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
+def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha",
+                      rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
     """
     Grafica las curvas de una articulación según la posibilidad especificada usando Plotly.
+    Ahora con subplots integrados para los ejes Z, Y, X en un solo gráfico.
     """
+    from plotly.subplots import make_subplots
+
     # Verificar la posibilidad y asignar colores
     if posibilidad == "Derecha":
         colors = ["red"]
@@ -219,17 +275,26 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
         curvas = [curva_derecha, curva_izquierda]  # Ambas curvas
     else:
         raise ValueError("La posibilidad debe ser 'Derecha', 'Izquierda' o 'Ambos'.")
+
     light_color = {
         'red': 'rgba(255, 0, 0, 0.2)',  # Rojo claro (transparente)
         'blue': 'rgba(0, 0, 255, 0.2)',  # Azul claro (transparente)
     }
 
-    # Crear los gráficos para cada eje
-    fig_z = go.Figure()
-    fig_y = go.Figure()
-    fig_x = go.Figure()
+    # Crear la figura con 3 columnas y 1 fila
+    fig = make_subplots(
+        rows=1, cols=3,
+        subplot_titles=(
+            f"Ángulos de Z",
+            f"Ángulos de Y",
+            f"Ángulos de X"
+        ),
+        shared_yaxes=False
+    )
 
-    # Procesar y graficar según la posibilidad
+    # Para manejar la leyenda solo para el primer subplot
+    show_legend_on = True
+
     for curva, color, label in zip(curvas, colors, labels):
         if curva is not None:
             # Convertir las columnas Z, Y, X en arrays de NumPy
@@ -250,132 +315,83 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
             # Crear el tiempo normalizado (0% a 100%)
             fixed_time = np.linspace(0, 100, num=len(average_Z))
 
-            # Graficar para Z
-            fig_z.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Z,
-                line=dict(color=color),
-                name=f"{label}: Promedio"
-            ))
-            fig_z.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Z + std_Z,
-                fill=None,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False
-            ))
-            fig_z.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Z - std_Z,
-                fill='tonexty',
-                mode='lines',
-                line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar"
-            ))
+            # Función auxiliar para agregar trazas (avg y std) a subplot
+            def add_trace_with_std(row, col, average, std, axis_label):
+                # Promedio
+                fig.add_trace(go.Scatter(
+                    x=fixed_time,
+                    y=average,
+                    line=dict(color=color),
+                    name=f"{label}: Promedio" if show_legend_on else None,
+                    legendgroup=label,
+                    showlegend=show_legend_on
+                ), row=row, col=col)
+                # Std + (sin mostrar leyenda)
+                fig.add_trace(go.Scatter(
+                    x=fixed_time,
+                    y=average + std,
+                    fill=None,
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False
+                ), row=row, col=col)
+                # Std - (con fill para área entre líneas)
+                fig.add_trace(go.Scatter(
+                    x=fixed_time,
+                    y=average - std,
+                    fill='tonexty',
+                    mode='lines',
+                    line=dict(width=0),
+                    fillcolor=light_color[color],
+                    name=f"{label}: Desviación estándar" if show_legend_on else None,
+                    legendgroup=label,
+                    showlegend=show_legend_on
+                ), row=row, col=col)
 
-            # Graficar para Y
-            fig_y.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Y,
-                line=dict(color=color),
-                name=f"{label}: Promedio"
-            ))
-            fig_y.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Y + std_Y,
-                fill=None,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False
-            ))
-            fig_y.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_Y - std_Y,
-                fill='tonexty',
-                mode='lines',
-                line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar"
-            ))
+            # Agregar las trazas para cada eje
+            add_trace_with_std(1, 1, average_Z, std_Z, "Z")
+            add_trace_with_std(1, 2, average_Y, std_Y, "Y")
+            add_trace_with_std(1, 3, average_X, std_X, "X")
 
-            # Graficar para X
-            fig_x.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_X,
-                line=dict(color=color),
-                name=f"{label}: Promedio"
-            ))
-            fig_x.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_X + std_X,
-                fill=None,
-                mode='lines',
-                line=dict(width=0),
-                showlegend=False
-            ))
-            fig_x.add_trace(go.Scatter(
-                x=fixed_time,
-                y=average_X - std_X,
-                fill='tonexty',
-                mode='lines',
-                line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar"
-            ))
+            # Solo mostrar la leyenda para el primer conjunto de datos
+            show_legend_on = False
 
-    # Configuración de los gráficos
-    fig_z.update_layout(
-        title=f"Articulación de {articulacion.capitalize()} - Ángulos de Z",
-        xaxis_title="Porcentaje del Ciclo de Marcha (%)",
-        yaxis_title="Ángulo en Z (°)",
-        yaxis_range=rango_z,
-        legend=dict(
-            orientation="h",  # Leyenda horizontal
-            yanchor="top",  # Anclada en la parte inferior
-            y=-0.3,  # Posición debajo del gráfico
-            xanchor="center",  # Centrada horizontalmente
-            x=0.5
-        )
-    )
-    fig_y.update_layout(
-        title=f"Articulación de {articulacion.capitalize()} - Ángulos de Y",
-        xaxis_title="Porcentaje del Ciclo de Marcha (%)",
-        yaxis_title="Ángulo en Y (°)",
-        yaxis_range=rango_y,
+    # Configuración de layout
+    fig.update_layout(
+        title_text=f"Articulación de {articulacion.capitalize()} - Ángulos por eje",
+        height=400,
+        width=1200,
         legend=dict(
             orientation="h",
-            yanchor="top",
-            y=-0.3,
+            yanchor="bottom",
+            y=1.02,
             xanchor="center",
             x=0.5
-        )
-    )
-    fig_x.update_layout(
-        title=f"Articulación de {articulacion.capitalize()} - Ángulos de X",
-        xaxis_title="Porcentaje del Ciclo de Marcha (%)",
-        yaxis_title="Ángulo en X (°)",
-        yaxis_range=rango_x,
-        legend=dict(
-            orientation="h",
-            yanchor="top",
-            y=-0.3,
-            xanchor="center",
-            x=0.5
-        )
+        ),
+        margin=dict(l=40, r=40, t=80, b=40)
     )
 
-    return fig_z, fig_y, fig_x
+    # Configuración ejes
+    fig.update_yaxes(title_text="Ángulo en Z (°)", range=rango_z, row=1, col=1)
+    fig.update_yaxes(title_text="Ángulo en Y (°)", range=rango_y, row=1, col=2)
+    fig.update_yaxes(title_text="Ángulo en X (°)", range=rango_x, row=1, col=3)
+
+    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=1)
+    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=2)
+    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=3)
+
+    return fig
+
+
+
+
 
 @callback(
     [Output('output-c3d-upload', 'children'),
-     Output('stored-data', 'data'),
-     Output('controls-row', 'style')],  # Mostrar/ocultar controles
+     Output('stored-data', 'data')],
     Input('upload-c3d', 'contents'),
     State('upload-c3d', 'filename')
 )
-
 def update_output(contents, filename):
     if contents is not None:
         results = {
@@ -385,7 +401,7 @@ def update_output(contents, filename):
             'rodilla_izquierda': [],
             'cadera_derecha': [],
             'cadera_izquierda': [],
-            'parametros_espaciotemporales': {}  # Nuevo campo para los parámetros espaciotemporales
+            'parametros_espaciotemporales': {}
         }
 
         content_type, content_string = contents.split(',')
@@ -412,20 +428,21 @@ def update_output(contents, filename):
             results['parametros_espaciotemporales'] = parametros_espaciotemporales
 
         except Exception as e:
-            return html.Div(f"Error al procesar el archivo {filename}: {str(e)}"), None, {'display': 'none'}
+            return html.Div(f"Error al procesar el archivo {filename}: {str(e)}"), None  # Solo dos valores
 
-        return html.Div(f"Archivo {filename} cargado correctamente."), results, {'display': 'block'}
-    return html.Div(), None, {'display': 'none'}
+        return html.Div(f"Archivo {filename} cargado correctamente."), results  # Solo dos valores
+
+    return html.Div(), None  # Solo dos valores
+
+
+
 
 @callback(
-    Output('graphs-row', 'children'),
-    [Input('articulacion-checklist', 'value'),
-     Input('lado-dropdown', 'value'),
+    Output('graphs-container', 'children'),
+    [Input('lado-dropdown', 'value'),
      Input('stored-data', 'data')]
 )
-
-
-def update_graphs(articulaciones, lado, stored_data):
+def update_graphs(lado, stored_data):
     if stored_data is None:
         return []
 
@@ -438,6 +455,9 @@ def update_graphs(articulaciones, lado, stored_data):
     curvas_cadera_izquierda = pd.DataFrame(stored_data['cadera_izquierda'])
 
     graphs = []
+
+    # Generar gráficos para todas las articulaciones
+    articulaciones = ['tobillo', 'rodilla', 'cadera']
     for articulacion in articulaciones:
         if articulacion == "tobillo":
             curva_derecha = curvas_tobillo_derecho
@@ -452,12 +472,15 @@ def update_graphs(articulaciones, lado, stored_data):
             curva_izquierda = curvas_cadera_izquierda
             rango_z, rango_y, rango_x = RANGOS_Y["cadera"].values()
 
-        # Generar los gráficos usando Plotly
-        fig_z, fig_y, fig_x = final_plot_plotly(curva_derecha, curva_izquierda, posibilidad=lado, rango_z=rango_z, rango_y=rango_y, rango_x=rango_x, articulacion=articulacion)
+        # Generar el gráfico combinado con subplots
+        fig = final_plot_plotly(curva_derecha, curva_izquierda, posibilidad=lado,
+                               rango_z=rango_z, rango_y=rango_y, rango_x=rango_x,
+                               articulacion=articulacion)
 
-        # Agregar los gráficos a la fila
-        graphs.append(dbc.Col(dcc.Graph(figure=fig_z), width=4))
-        graphs.append(dbc.Col(dcc.Graph(figure=fig_y), width=4))
-        graphs.append(dbc.Col(dcc.Graph(figure=fig_x), width=4))
+        # Agregar el gráfico combinado a la lista
+        graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))  # Usar ancho completo por gráfica integrada
 
+    # Retornar solo 3 gráficos combinados
     return graphs
+
+
