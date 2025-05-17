@@ -10,7 +10,9 @@ import tempfile
 import os
 import numpy as np
 
-dash.register_page(__name__, path="/analysis", name="Análisis de Marcha")
+
+dash.register_page(__name__, path="/analysis", name="Análisis de Marcha", icon="file-earmark-text")
+#dash.register_page(__name__, path="/analysis", name="Análisis de Marcha")
 
 # Rangos de los ejes Y para cada articulación
 RANGOS_Y = {
@@ -22,13 +24,20 @@ RANGOS_Y = {
 layout = dbc.Container([
     dcc.Store(id='stored-data'),
     dbc.Row([
-        dbc.Col(html.H1("Análisis de Marcha", className="text-center mb-4"))
+        dbc.Col(html.H1("Análisis de Marcha", className="text-center mb-4", style={
+            'color': '#2c3e50',
+            'fontWeight': '600',
+            'marginTop': '20px'
+        }))
     ]),
     dbc.Row([
         dbc.Col([
             dcc.Upload(
                 id='upload-c3d',
-                children=html.Div(['Arrastra o selecciona un archivo C3D']),
+                children=html.Div([
+                    html.I(className="bi bi-cloud-arrow-up me-2"),
+                    "Arrastra o selecciona un archivo C3D"
+                ]),
                 style={
                     'width': '100%',
                     'height': '60px',
@@ -37,16 +46,24 @@ layout = dbc.Container([
                     'borderStyle': 'dashed',
                     'borderRadius': '5px',
                     'textAlign': 'center',
-                    'margin': '10px'
+                    'margin': '10px 0',
+                    'cursor': 'pointer',
+                    'backgroundColor': 'rgba(66, 139, 202, 0.1)',
+                    'borderColor': '#428bca',
+                    'color': '#428bca',
+                    'transition': 'all 0.3s'
                 },
                 multiple=False
             ),
-            html.Div(id='output-c3d-upload'),
-        ])
-    ]),
-    # Contenedor para las tabs que solo se muestra cuando hay datos
+            html.Div(id='output-c3d-upload', className="text-center mb-3", style={
+                'color': '#28a745',
+                'fontWeight': '500'
+            }),
+        ], width=12)
+    ], className="mb-4"),
+    # Contenedor para las tabs mejorado
     html.Div(id='tabs-container', style={'display': 'none'})
-])
+], fluid=True, style={'padding': '20px'})
 
 # Callback para mostrar/ocultar las tabs según si hay datos
 @callback(
@@ -60,23 +77,86 @@ def show_hide_tabs(stored_data):
         return None, {'display': 'none'}
     
     tabs = dcc.Tabs(id='tabs', value='tab-1', children=[
-        dcc.Tab(label='Análisis Cinemático', value='tab-1', children=[
-            dcc.Dropdown(
-                id='lado-dropdown',
-                options=[
-                    {'label': 'Derecha', 'value': 'Derecha'},
-                    {'label': 'Izquierda', 'value': 'Izquierda'},
-                    {'label': 'Ambos', 'value': 'Ambos'}
-                ],
-                value='Ambos',
-                clearable=False
-            ),
-            html.Div(id='graphs-container')
-        ]),
-        dcc.Tab(label='Parámetros Espaciotemporales', value='tab-2', children=[
-            html.Div(id='parametros-container')
-        ])
-    ])
+        dcc.Tab(
+            label='Análisis Cinemático',
+            value='tab-1',
+            style={
+                'borderTop': '1px solid #d6d6d6',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                'color': '#555'
+            },
+            selected_style={
+                'borderTop': '2px solid #428bca',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'white',
+                'color': '#2c3e50'
+            },
+            children=[
+                dbc.Row([
+                    dbc.Col([
+                        dcc.Dropdown(
+                            id='lado-dropdown',
+                            options=[
+                                {'label': 'Derecha', 'value': 'Derecha'},
+                                {'label': 'Izquierda', 'value': 'Izquierda'},
+                                {'label': 'Ambos', 'value': 'Ambos'}
+                            ],
+                            value='Ambos',
+                            clearable=False,
+                            style={
+                                'borderRadius': '5px',
+                                'borderColor': '#ced4da'
+                            }
+                        )
+                    ], width=4)
+                ], className="mb-4"),
+                dbc.Row(id='graphs-container')
+            ]
+        ),
+        dcc.Tab(
+            label='Parámetros Espaciotemporales',
+            value='tab-2',
+            style={
+                'borderTop': '1px solid #d6d6d6',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                'color': '#555'
+            },
+            selected_style={
+                'borderTop': '2px solid #428bca',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'white',
+                'color': '#2c3e50'
+            },
+            children=[
+                html.Div(id='parametros-container')
+            ]
+        )
+    ], style={
+        'borderBottom': '1px solid #d6d6d6',
+        'marginBottom': '20px'
+    })
     
     return tabs, {'display': 'block'}
 
@@ -86,302 +166,586 @@ def show_hide_tabs(stored_data):
     Input('stored-data', 'data')
 )
 
+
 def update_parametros_espaciotemporales(stored_data):
     if stored_data is None or 'parametros_espaciotemporales' not in stored_data:
         return []
     
     parametros = stored_data['parametros_espaciotemporales']
-    
-    # Función para crear gráficos de barras con escala consistente
-    def crear_grafico_barras(valores, titulo, colores, max_valor=None, unidades=""):
+
+
+    def crear_grafico_barras_apilado(valores, titulo, tipo, max_valor=None):
         fig = go.Figure()
         
-        # Si no se especifica max_valor, calcularlo de los valores
+        # Colores definidos
+        color_derecho = '#FF5252'  # Rojo
+        color_derecho_claro = '#FF9999'  # Rojo claro
+        color_izquierdo = '#4285F4'  # Azul
+        color_izquierdo_claro = '#9999FF'  # Azul claro
+        
+        if tipo == "porcentaje":
+            # Valores para porcentajes
+            balanceo_derecho = valores[0]
+            apoyo_derecho = 100 - valores[0]
+            balanceo_izquierdo = valores[1]
+            apoyo_izquierdo = 100 - valores[1]
+            unidades = "%"
+        else:
+            # Valores para tiempos
+            balanceo_derecho = valores[0]
+            apoyo_derecho = max_valor - valores[0]
+            balanceo_izquierdo = valores[1]
+            apoyo_izquierdo = max_valor - valores[1]
+            unidades = "s"
+        
+        # Barras para el lado DERECHO
+        fig.add_trace(go.Bar(
+            x=['Derecho'],
+            y=[balanceo_derecho],
+            name='Balanceo Derecho',
+            marker_color=color_derecho,
+            text=[f"{balanceo_derecho:.1f}{unidades}"],
+            textposition='inside',
+            textfont=dict(color='white', size=12),
+            width=0.4
+        ))
+        fig.add_trace(go.Bar(
+            x=['Derecho'],
+            y=[apoyo_derecho],
+            name='Apoyo Derecho',
+            marker_color=color_derecho_claro,
+            text=[f"{apoyo_derecho:.1f}{unidades}"],
+            textposition='inside',
+            textfont=dict(color='white', size=12),
+            width=0.4
+        ))
+        
+        # Barras para el lado IZQUIERDO
+        fig.add_trace(go.Bar(
+            x=['Izquierdo'],
+            y=[balanceo_izquierdo],
+            name='Balanceo Izquierdo',
+            marker_color=color_izquierdo,
+            text=[f"{balanceo_izquierdo:.1f}{unidades}"],
+            textposition='inside',
+            textfont=dict(color='white', size=12),
+            width=0.4
+        ))
+        fig.add_trace(go.Bar(
+            x=['Izquierdo'],
+            y=[apoyo_izquierdo],
+            name='Apoyo Izquierdo',
+            marker_color=color_izquierdo_claro,
+            text=[f"{apoyo_izquierdo:.1f}{unidades}"],
+            textposition='inside',
+            textfont=dict(color='white', size=12),
+            width=0.4
+        ))
+        
+        fig.update_layout(
+            title=dict(
+                text=f"<b>{titulo}</b>",
+                font=dict(size=14, family="Arial"),
+                xanchor='center',
+                x=0.5
+            ),
+            barmode='stack',
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=40, r=40, t=80, b=40),
+            height=350,
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            ),
+            xaxis=dict(
+                showline=True,
+                linecolor='rgba(0,0,0,0.2)',
+                showgrid=False
+            ),
+            yaxis=dict(
+                showline=True,
+                linecolor='rgba(0,0,0,0.2)',
+                showgrid=False,
+                title="Valor"
+            )
+        )
+        
+         # Mapeo de títulos a imágenes
+        IMAGENES_TOOLTIP_APILADAS = {
+            "Distribución del Ciclo": "/assets/images/distribucion_ciclo.png",
+            "Tiempos del Ciclo": "/assets/images/tiempos_ciclo.png"
+        }
+        
+        imagen_path = IMAGENES_TOOLTIP_APILADAS.get(titulo, "")
+        
+        graph = dcc.Graph(
+            figure=fig,
+            style={'margin': '20px 0'},
+            config={'displayModeBar': False}
+        )
+        
+        if imagen_path:
+            return html.Div([
+                dbc.Tooltip(
+                    html.Img(
+                        src=imagen_path,
+                        style={
+                            'width': '300px',
+                            'borderRadius': '5px',
+                            'boxShadow': '0 4px 8px rgba(0,0,0,0.2)'
+                        }
+                    ),
+                    target=f"tooltip-{titulo.replace(' ', '-').lower()}",
+                    placement="top",
+                    style={
+                        'backgroundColor': 'transparent',
+                        'border': 'none',
+                        'maxWidth': 'none'
+                    }
+                ),
+                html.Div(graph, id=f"tooltip-{titulo.replace(' ', '-').lower()}")
+            ])
+        return graph
+    
+
+    
+    # Función para crear gráficos de barras con el estilo consistente
+    def crear_grafico_barras(valores, titulo, colores, max_valor=None, unidades="", apilado=False):
+        fig = go.Figure()
+        
         if max_valor is None:
             max_valor = max(valores) * 1.2 if valores else 1
         
-        # Para pasos (dos barras)
         if len(valores) == 2:
-            fig.add_trace(go.Bar(
-                x=['Derecho', 'Izquierdo'],
-                y=valores,
-                marker_color=colores,
-                text=[f"{v:.2f}{unidades}" for v in valores],
-                textposition='auto'
-            ))
+            if apilado:
+                # Definir colores apilados basados en el título
+                colores_apilados = ['#FF5252', '#FF9999'] if 'balanceo' in titulo.lower() else ['#4285F4', '#9999FF']
+                
+                # Gráfico apilado (para balanceo/apoyo)
+                fig.add_trace(go.Bar(
+                    x=['Derecho', 'Izquierdo'],
+                    y=[valores[0], valores[1]],
+                    name='Balanceo' if 'balanceo' in titulo.lower() else 'Apoyo',
+                    marker_color=colores_apilados[0],
+                    marker_line=dict(width=1, color='rgba(0,0,0,0.3)'),
+                    width=0.5,
+                    text=[f"{valores[0]:.1f}{unidades}", f"{valores[1]:.1f}{unidades}"],
+                    textposition='inside',
+                    textfont=dict(size=12, color='white')
+                ))
+                fig.add_trace(go.Bar(
+                    x=['Derecho', 'Izquierdo'],
+                    y=[100-valores[0], 100-valores[1]] if '%' in unidades else [max_duracion-valores[0], max_duracion-valores[1]],
+                    name='Apoyo' if 'balanceo' in titulo.lower() else 'Balanceo',
+                    marker_color=colores_apilados[1],
+                    marker_line=dict(width=1, color='rgba(0,0,0,0.3)'),
+                    width=0.5,
+                    textposition='inside',
+                    textfont=dict(size=12, color='white')
+                ))
+            else:
+                # Gráfico normal de barras
+                fig.add_trace(go.Bar(
+                    x=['Derecho', 'Izquierdo'],
+                    y=valores,
+                    marker_color=colores,
+                    marker_line=dict(width=1, color='rgba(0,0,0,0.3)'),
+                    width=0.5,
+                    text=[f"{v:.2f}{unidades}" for v in valores],
+                    textposition='auto',
+                    textfont=dict(size=12, color='white')
+                ))
+            # Mapeo de títulos a rutas de imágenes
+        IMAGENES_TOOLTIP = {
+        "Duración del Ciclo": "/assets/images/duracion_ciclo.png",
+        "Longitud del Ciclo": "/assets/images/longitud_ciclo.png",
+        "Duración del Paso": "/assets/images/duracion_paso.png",
+        # Agrega más mapeos según necesites
+        }
+    
+         # Obtener la ruta de la imagen para este título
+        imagen_path = IMAGENES_TOOLTIP.get(titulo.split("(")[0].strip(), "")
+        
         
         fig.update_layout(
-            title=titulo,
-            margin=dict(l=20, r=20, t=40, b=20),
-            height=150,
-            showlegend=False,
-            xaxis=dict(showgrid=False),
+            title=dict(
+                text=f"<b>{titulo}</b>",
+                font=dict(size=14, family="Arial"),
+                xanchor='center',
+                x=0.5
+            ),
+            margin=dict(l=40, r=40, t=80, b=40),
+            height=300,
+            plot_bgcolor='rgba(0,0,0,0)',
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(family="Arial"),
+            showlegend=apilado,
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="center",
+                x=0.5
+            ) if apilado else None,
+            xaxis=dict(
+                showline=True,
+                linecolor='rgba(0,0,0,0.2)',
+                showgrid=False
+            ),
             yaxis=dict(
-                showgrid=False, 
-                showticklabels=False,
-                range=[0, max_valor * 1.1]  # 10% más para espacio
-            )
+                showline=True,
+                linecolor='rgba(0,0,0,0.2)',
+                showgrid=False,
+                range=[0, max_valor * 1.1] if not apilado else None,
+                showticklabels=True,
+                title="Valor"
+            ),
+            barmode='stack' if apilado else 'group'
         )
-        return dcc.Graph(figure=fig, config={'staticPlot': True}, style={'height': '150px'})
+
+        graph = dcc.Graph(
+            figure=fig,
+            style={'margin': '20px 0'},
+            config={'displayModeBar': False}
+        )
+        
+        # Si hay imagen para este gráfico, agregar el tooltip
+        if imagen_path:
+            return html.Div([
+                dbc.Tooltip(
+                    html.Img(
+                        src=imagen_path,
+                        style={
+                            'width': '300px',
+                            'borderRadius': '5px',
+                            'boxShadow': '0 4px 8px rgba(0,0,0,0.2)'
+                        }
+                    ),
+                    target=f"tooltip-{titulo.replace(' ', '-').lower()}",
+                    placement="top",
+                    style={
+                        'backgroundColor': 'transparent',
+                        'border': 'none',
+                        'maxWidth': 'none'
+                    }
+                ),
+                html.Div(graph, id=f"tooltip-{titulo.replace(' ', '-').lower()}")
+            ])
+        return graph
     
-    # Determinar rangos máximos para escalas consistentes
-    max_duracion = max(parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'], 
-                      parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo'],
-                      parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo'],
-                      parametros['tiempo_apoyo_derecho'], parametros['tiempo_apoyo_izquierdo'])
-    
-    max_longitud = max(parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'],
-                     parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo'])
-    
-    max_ancho = max(parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo'])
-    max_porcentaje = 100  # Para los porcentajes de balanceo/apoyo
-    
-    # Colores para derecha/izquierda
+    # Colores consistentes
     colores_lados = ['#FF5252', '#4285F4']  # Rojo y azul
     
-    return dbc.Row([
-        # Primera fila de cards
-        dbc.Row([
-            # Tarjeta para ciclos
-            dbc.Col(dbc.Card([
-                dbc.CardHeader(html.H4("Ciclos de Marcha", className="text-center mb-0")),
-                dbc.CardBody([
-                    html.H5(f"Número: {parametros['num_ciclos_derecho']}D / {parametros['num_ciclos_izquierdo']}I", 
-                            className="text-center mb-3"),
-                    crear_grafico_barras(
-                        [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
-                        "Duración (s)",
-                        colores_lados,
-                        max_duracion
-                    ),
-                    crear_grafico_barras(
-                        [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
-                        "Longitud (m)",
-                        colores_lados,
-                        max_longitud
-                    )
-                ])
-            ], className="h-100"), width=4),
-            
-            # Tarjeta para pasos
-            dbc.Col(dbc.Card([
-                dbc.CardHeader(html.H4("Pasos", className="text-center mb-0")),
-                dbc.CardBody([
-                    html.H5(f"Número: {parametros['num_pasos']}", className="text-center mb-3"),
-                    crear_grafico_barras(
-                        [parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo']],
-                        "Duración (s)",
-                        colores_lados,
-                        max_duracion
-                    ),
-                    crear_grafico_barras(
-                        [parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo']],
-                        "Longitud (m)",
-                        colores_lados,
-                        max_longitud
-                    ),
-                    crear_grafico_barras(
-                        [parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo']],
-                        "Ancho (m)",
-                        colores_lados,
-                        max_ancho
-                    )
-                ])
-            ], className="h-100"), width=4),
-            
-            # Tarjeta para velocidad y cadencia
-            dbc.Col(dbc.Card([
-                dbc.CardHeader(html.H4("Velocidad y Cadencia", className="text-center mb-0")),
-                dbc.CardBody([
-                    html.Div([
-                        html.Div([
-                            html.P("Velocidad:", className="mb-1"),
-                            html.P(f"{parametros['velocidad']:.2f} m/s", className="h4 text-primary")
-                        ], className="text-center mb-3"),
-                        html.Div([
-                            html.P("Cadencia:", className="mb-1"),
-                            html.P(f"{parametros['cadencia']:.2f} pasos/min", className="h4 text-primary")
-                        ], className="text-center")
-                    ])
-                ])
-            ], className="h-100"), width=4)
-        ], className="mb-4"),
+    # Rangos máximos
+    max_duracion = max(
+        parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo'],
+        parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo']
+    ) * 1.2
+    
+    max_longitud = max(
+        parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo'],
+        parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo']
+    ) * 1.2
+    
+    max_ancho = max(
+        parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo']
+    ) * 1.2
+    
+    # Primera fila: Números de ciclos y pasos
+    fila1 = dbc.Row([
+        dbc.Col(html.Div([
+            html.H5("Ciclos Derecha", style={
+                'textAlign': 'center',
+                'color': '#FF5252',
+                'marginBottom': '10px'
+            }),
+            html.H2(f"{parametros['num_ciclos_derecho']}", style={
+                'textAlign': 'center',
+                'color': '#FF5252',
+                'fontSize': '42px',
+                'fontWeight': '600'
+            })
+        ], style={
+            'padding': '20px',
+            'borderRadius': '8px',
+            'backgroundColor': 'rgba(255, 82, 82, 0.1)'
+        }), width=4),
         
-        # Segunda fila de cards
-        dbc.Row([
-            # Tarjeta para tiempos de balanceo y apoyo
-            dbc.Col(dbc.Card([
-                dbc.CardHeader(html.H4("Tiempos de Balanceo y Apoyo", className="text-center mb-0")),
-                dbc.CardBody([
-                    crear_grafico_barras(
-                        [parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo']],
-                        "Tiempo Balanceo (s)",
-                        colores_lados,
-                        max_duracion
-                    ),
-                    crear_grafico_barras(
-                        [parametros['tiempo_apoyo_derecho'], parametros['tiempo_apoyo_izquierdo']],
-                        "Tiempo Apoyo (s)",
-                        colores_lados,
-                        max_duracion
-                    )
-                ])
-            ], className="h-100"), width=6),
-            
-            # Tarjeta para porcentajes de balanceo y apoyo
-            dbc.Col(dbc.Card([
-                dbc.CardHeader(html.H4("Porcentajes de Balanceo y Apoyo", className="text-center mb-0")),
-                dbc.CardBody([
-                    crear_grafico_barras(
-                        [parametros['balanceo_derecho'], parametros['balanceo_izquierdo']],
-                        "% Balanceo",
-                        colores_lados,
-                        max_porcentaje,
-                        "%"
-                    ),
-                    crear_grafico_barras(
-                        [parametros['apoyo_derecho'], parametros['apoyo_izquierdo']],
-                        "% Apoyo",
-                        colores_lados,
-                        max_porcentaje,
-                        "%"
-                    )
-                ])
-            ], className="h-100"), width=6)
-        ])
-    ])
+        dbc.Col(html.Div([
+            html.H5("Ciclos Izquierda", style={
+                'textAlign': 'center',
+                'color': '#4285F4',
+                'marginBottom': '10px'
+            }),
+            html.H2(f"{parametros['num_ciclos_izquierdo']}", style={
+                'textAlign': 'center',
+                'color': '#4285F4',
+                'fontSize': '42px',
+                'fontWeight': '600'
+            })
+        ], style={
+            'padding': '20px',
+            'borderRadius': '8px',
+            'backgroundColor': 'rgba(66, 133, 244, 0.1)'
+        }), width=4),
+        
+        dbc.Col(html.Div([
+            html.H5("Pasos Totales", style={
+                'textAlign': 'center',
+                'color': '#2c3e50',
+                'marginBottom': '10px'
+            }),
+            html.H2(f"{parametros['num_pasos']}", style={
+                'textAlign': 'center',
+                'color': '#2c3e50',
+                'fontSize': '42px',
+                'fontWeight': '600'
+            })
+        ], style={
+            'padding': '20px',
+            'borderRadius': '8px',
+            'backgroundColor': 'rgba(44, 62, 80, 0.1)'
+        }), width=4)
+    ], className="mb-4")
+    
+    # Segunda fila: Duración y longitud del ciclo + espacio
+    fila2 = dbc.Row([
+        dbc.Col(crear_grafico_barras(
+            [parametros['duracion_ciclo_derecho'], parametros['duracion_ciclo_izquierdo']],
+            "Duración del Ciclo (s)",
+            colores_lados,
+            max_duracion
+        ), width=4),
+        
+        dbc.Col(crear_grafico_barras(
+            [parametros['longitud_ciclo_derecho'], parametros['longitud_ciclo_izquierdo']],
+            "Longitud del Ciclo (m)",
+            colores_lados,
+            max_longitud
+        ), width=4),
+        
+        dbc.Col(html.Div([
+            html.H5("Velocidad", style={
+                'textAlign': 'center',
+                'color': '#2c3e50',
+                'marginBottom': '5px'
+            }),
+            html.H3(f"{parametros['velocidad']:.2f} m/s", style={
+                'textAlign': 'center',
+                'color': '#428bca',
+                'fontSize': '32px',
+                'fontWeight': '600',
+                'marginBottom': '20px'
+            }),
+            html.H5("Cadencia", style={
+                'textAlign': 'center',
+                'color': '#2c3e50',
+                'marginBottom': '5px'
+            }),
+            html.H3(f"{parametros['cadencia']:.2f} pasos/min", style={
+                'textAlign': 'center',
+                'color': '#428bca',
+                'fontSize': '32px',
+                'fontWeight': '600'
+            })
+        ], style={
+            'padding': '30px',
+            'borderRadius': '8px',
+            'backgroundColor': 'rgba(255,255,255,0.7)',
+            'border': '1px solid rgba(0,0,0,0.1)',
+            'height': '100%',
+            'display': 'flex',
+            'flexDirection': 'column',
+            'justifyContent': 'center'
+        }), width=4)
+    ], className="mb-4")
+    
+    # Tercera fila: Parámetros del paso
+    fila3 = dbc.Row([
+        dbc.Col(crear_grafico_barras(
+            [parametros['tiempo_paso_derecho'], parametros['tiempo_paso_izquierdo']],
+            "Duración del Paso (s)",
+            colores_lados,
+            max_duracion
+        ), width=4),
+        
+        dbc.Col(crear_grafico_barras(
+            [parametros['longitud_paso_derecho'], parametros['longitud_paso_izquierdo']],
+            "Longitud del Paso (m)",
+            colores_lados,
+            max_longitud
+        ), width=4),
+        
+        dbc.Col(crear_grafico_barras(
+            [parametros['ancho_paso_derecho'], parametros['ancho_paso_izquierdo']],
+            "Ancho del Paso (m)",
+            colores_lados,
+            max_ancho
+        ), width=4)
+    ], className="mb-4")
+    
 
+    
+    # Quinta fila: Porcentajes apilados
+    fila5 = dbc.Row([
+        # Gráfico de porcentajes apilados
+        dbc.Col(crear_grafico_barras_apilado(
+            [parametros['balanceo_derecho'], parametros['balanceo_izquierdo']],
+            "Distribución del Ciclo (%)",
+            tipo="porcentaje"
+        ), width=6),
+        
+        # Gráfico de tiempos apilados
+        dbc.Col(crear_grafico_barras_apilado(
+            [parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo']],
+            "Tiempos del Ciclo (s)",
+            tipo="tiempo",
+            max_valor=max_duracion
+        ), width=6)
+    ])
+    
+
+    return html.Div([
+        html.H3("Parámetros Espaciotemporales", style={
+            'textAlign': 'center',
+            'color': '#2c3e50',
+            'margin': '20px 0 30px 0',
+            'fontFamily': 'Arial',
+            'fontWeight': '600'
+        }),
+        
+        fila1,
+        fila2,
+        fila3,
+        fila5
+    ], style={'padding': '0 20px'})
 
 def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha",
                       rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
-    """
-    Grafica las curvas de una articulación según la posibilidad especificada usando Plotly.
-    Ahora con subplots integrados para los ejes Z, Y, X en un solo gráfico.
-    """
-    from plotly.subplots import make_subplots
-
-    # Verificar la posibilidad y asignar colores
-    if posibilidad == "Derecha":
-        colors = ["red"]
-        labels = ["Derecha"]
-        curvas = [curva_derecha]  # Solo curva derecha
-    elif posibilidad == "Izquierda":
-        colors = ["blue"]
-        labels = ["Izquierda"]
-        curvas = [curva_izquierda]  # Solo curva izquierda
-    elif posibilidad == "Ambos":
-        colors = ["red", "blue"]
-        labels = ["Derecha", "Izquierda"]
-        curvas = [curva_derecha, curva_izquierda]  # Ambas curvas
-    else:
-        raise ValueError("La posibilidad debe ser 'Derecha', 'Izquierda' o 'Ambos'.")
+    
+    # Colores actualizados
+    colors = {
+        'Derecha': ['#FF5252'],  # Rojo moderno
+        'Izquierda': ['#4285F4'],  # Azul moderno
+        'Ambos': ['#FF5252', '#4285F4']  # Rojo y azul
+    }[posibilidad]
+    
+    labels = {
+        'Derecha': ["Derecha"],
+        'Izquierda': ["Izquierda"],
+        'Ambos': ["Derecha", "Izquierda"]
+    }[posibilidad]
 
     light_color = {
-        'red': 'rgba(255, 0, 0, 0.2)',  # Rojo claro (transparente)
-        'blue': 'rgba(0, 0, 255, 0.2)',  # Azul claro (transparente)
+        '#FF5252': 'rgba(255, 82, 82, 0.2)',  # Rojo claro
+        '#4285F4': 'rgba(66, 133, 244, 0.2)',  # Azul claro
     }
 
-    # Crear la figura con 3 columnas y 1 fila
     fig = make_subplots(
         rows=1, cols=3,
         subplot_titles=(
-            f"Ángulos de Z",
-            f"Ángulos de Y",
-            f"Ángulos de X"
+            f"<b>Ángulos de Z</b>",
+            f"<b>Ángulos de Y</b>",
+            f"<b>Ángulos de X</b>"
         ),
-        shared_yaxes=False
+        shared_yaxes=False,
+        horizontal_spacing=0.08
     )
 
-    # Para manejar la leyenda solo para el primer subplot
     show_legend_on = True
 
-    for curva, color, label in zip(curvas, colors, labels):
-        if curva is not None:
-            # Convertir las columnas Z, Y, X en arrays de NumPy
-            Z_curves = np.array(curva["Z"].tolist())
-            Y_curves = np.array(curva["Y"].tolist())
-            X_curves = np.array(curva["X"].tolist())
+    for curva, color, label in zip([c for c in [curva_derecha, curva_izquierda] if c is not None], colors, labels):
+        Z_curves = np.array(curva["Z"].tolist())
+        Y_curves = np.array(curva["Y"].tolist())
+        X_curves = np.array(curva["X"].tolist())
 
-            # Calcular promedios y desviaciones estándar
-            average_Z = np.mean(Z_curves, axis=0)
-            std_Z = np.std(Z_curves, axis=0)
+        average_Z = np.mean(Z_curves, axis=0)
+        std_Z = np.std(Z_curves, axis=0)
 
-            average_Y = np.mean(Y_curves, axis=0)
-            std_Y = np.std(Y_curves, axis=0)
+        average_Y = np.mean(Y_curves, axis=0)
+        std_Y = np.std(Y_curves, axis=0)
 
-            average_X = np.mean(X_curves, axis=0)
-            std_X = np.std(X_curves, axis=0)
+        average_X = np.mean(X_curves, axis=0)
+        std_X = np.std(X_curves, axis=0)
 
-            # Crear el tiempo normalizado (0% a 100%)
-            fixed_time = np.linspace(0, 100, num=len(average_Z))
+        fixed_time = np.linspace(0, 100, num=len(average_Z))
 
-            # Función auxiliar para agregar trazas (avg y std) a subplot
-            def add_trace_with_std(row, col, average, std, axis_label):
-                # Promedio
-                fig.add_trace(go.Scatter(
-                    x=fixed_time,
-                    y=average,
-                    line=dict(color=color),
-                    name=f"{label}: Promedio" if show_legend_on else None,
-                    legendgroup=label,
-                    showlegend=show_legend_on
-                ), row=row, col=col)
-                # Std + (sin mostrar leyenda)
-                fig.add_trace(go.Scatter(
-                    x=fixed_time,
-                    y=average + std,
-                    fill=None,
-                    mode='lines',
-                    line=dict(width=0),
-                    showlegend=False
-                ), row=row, col=col)
-                # Std - (con fill para área entre líneas)
-                fig.add_trace(go.Scatter(
-                    x=fixed_time,
-                    y=average - std,
-                    fill='tonexty',
-                    mode='lines',
-                    line=dict(width=0),
-                    fillcolor=light_color[color],
-                    name=f"{label}: Desviación estándar" if show_legend_on else None,
-                    legendgroup=label,
-                    showlegend=show_legend_on
-                ), row=row, col=col)
+        def add_trace_with_std(row, col, average, std, axis_label):
+            fig.add_trace(go.Scatter(
+                x=fixed_time,
+                y=average,
+                line=dict(color=color, width=2),
+                name=f"{label}: Promedio" if show_legend_on else None,
+                legendgroup=label,
+                showlegend=show_legend_on
+            ), row=row, col=col)
+            
+            fig.add_trace(go.Scatter(
+                x=fixed_time,
+                y=average + std,
+                fill=None,
+                mode='lines',
+                line=dict(width=0),
+                showlegend=False
+            ), row=row, col=col)
+            
+            fig.add_trace(go.Scatter(
+                x=fixed_time,
+                y=average - std,
+                fill='tonexty',
+                mode='lines',
+                line=dict(width=0),
+                fillcolor=light_color[color],
+                name=f"{label}: Desviación estándar" if show_legend_on else None,
+                legendgroup=label,
+                showlegend=show_legend_on
+            ), row=row, col=col)
 
-            # Agregar las trazas para cada eje
-            add_trace_with_std(1, 1, average_Z, std_Z, "Z")
-            add_trace_with_std(1, 2, average_Y, std_Y, "Y")
-            add_trace_with_std(1, 3, average_X, std_X, "X")
+        add_trace_with_std(1, 1, average_Z, std_Z, "Z")
+        add_trace_with_std(1, 2, average_Y, std_Y, "Y")
+        add_trace_with_std(1, 3, average_X, std_X, "X")
 
-            # Solo mostrar la leyenda para el primer conjunto de datos
-            show_legend_on = False
+        show_legend_on = False
 
-    # Configuración de layout
     fig.update_layout(
-        title_text=f"Articulación de {articulacion.capitalize()} - Ángulos por eje",
+        title_text=f"<b>Articulación de {articulacion.capitalize()}</b> - Ángulos por eje",
         height=400,
         width=1200,
+        plot_bgcolor='rgba(0,0,0,0)',
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(family="Arial", size=12),
         legend=dict(
             orientation="h",
             yanchor="bottom",
             y=1.02,
             xanchor="center",
-            x=0.5
+            x=0.5,
+            bgcolor='rgba(255,255,255,0.7)'
         ),
-        margin=dict(l=40, r=40, t=80, b=40)
+        margin=dict(l=40, r=40, t=100, b=40)
     )
 
-    # Configuración ejes
-    fig.update_yaxes(title_text="Ángulo en Z (°)", range=rango_z, row=1, col=1)
-    fig.update_yaxes(title_text="Ángulo en Y (°)", range=rango_y, row=1, col=2)
-    fig.update_yaxes(title_text="Ángulo en X (°)", range=rango_x, row=1, col=3)
-
-    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=1)
-    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=2)
-    fig.update_xaxes(title_text="Porcentaje del Ciclo de Marcha (%)", row=1, col=3)
+    # Configuración ejes con mejor estilo
+    for col in [1, 2, 3]:
+        fig.update_yaxes(
+            title_text=f"Ángulo (°)",
+            range=[rango_z, rango_y, rango_x][col-1],
+            row=1, col=col,
+            gridcolor='rgba(0,0,0,0.1)',
+            zerolinecolor='rgba(0,0,0,0.2)'
+        )
+        fig.update_xaxes(
+            title_text="% Ciclo de Marcha",
+            row=1, col=col,
+            gridcolor='rgba(0,0,0,0.1)'
+        )
 
     return fig
-
 
 
 
@@ -426,13 +790,31 @@ def update_output(contents, filename):
             results['cadera_derecha'].extend(curvas_cadera_derecha.to_dict('records'))
             results['cadera_izquierda'].extend(curvas_cadera_izquierda.to_dict('records'))
             results['parametros_espaciotemporales'] = parametros_espaciotemporales
+            
+            return dbc.Alert(
+                f"Archivo {filename} cargado correctamente",
+                color="success",
+                dismissable=True,
+                style={
+                    'margin': '10px 0',
+                    'borderLeft': '4px solid #28a745'
+                }
+            ), results
 
         except Exception as e:
-            return html.Div(f"Error al procesar el archivo {filename}: {str(e)}"), None  # Solo dos valores
+            return dbc.Alert(
+                f"Error al procesar el archivo {filename}: {str(e)}",
+                color="danger",
+                dismissable=True,
+                style={
+                    'margin': '10px 0',
+                    'borderLeft': '4px solid #dc3545'
+                }
+            ), None
+       
 
-        return html.Div(f"Archivo {filename} cargado correctamente."), results  # Solo dos valores
+    return html.Div(), None
 
-    return html.Div(), None  # Solo dos valores
 
 
 
