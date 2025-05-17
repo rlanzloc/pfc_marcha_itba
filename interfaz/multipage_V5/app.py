@@ -1,9 +1,9 @@
-
+import os
 import dash
 from dash import html, dcc
 import dash_bootstrap_components as dbc
 
-app = dash.Dash(__name__, use_pages=True, external_stylesheets=[dbc.themes.SPACELAB])
+app = dash.Dash(__name__, suppress_callback_exceptions=True, use_pages=True, external_stylesheets=[dbc.themes.SPACELAB])
 sidebar = dbc.Nav(
             [
                 dbc.NavLink(
@@ -51,4 +51,4 @@ app.layout = dbc.Container([
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # Usa el puerto que Render asigna
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host="127.0.0.1", port=port, debug=True, use_reloader=False)

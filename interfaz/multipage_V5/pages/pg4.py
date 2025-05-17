@@ -4,6 +4,8 @@ import dash_bootstrap_components as dbc
 import pandas as pd
 import base64, io, os, serial, threading, datetime
 import plotly.graph_objects as go
+from pathlib import Path
+
 
 dash.register_page(__name__, name='Arduino read')
 
@@ -24,8 +26,15 @@ arduino_izq = safe_serial("COM3")
 puerto_disponible = arduino_der is not None or arduino_izq is not None
 
 # -------- Variables y directorio -----------------
-directorio_guardado = "C:/Users/Rashel Lanz Lo Curto/Desktop/datos_sensores"
-os.makedirs(directorio_guardado, exist_ok=True)
+# Ruta del archivo actual (por ejemplo, app.py)
+ruta_actual = Path(__file__).resolve().parent
+
+# Ruta a la carpeta 'assets'
+directorio_guardado = ruta_actual / "assets" / "datos_sensores"
+
+# Crear la carpeta si no existe
+directorio_guardado.mkdir(parents=True, exist_ok=True)
+
 
 reading = False
 df_der = pd.DataFrame(columns=['Hora', 'Tiempo'] + [f'Derecha_S{i+1}' for i in range(8)])

@@ -9,7 +9,7 @@ df_derecha = pd.DataFrame(columns=['Hora', 'Tiempo'] + [f"Derecha_S{i+1}" for i 
 
 # Inicializar Arduinos (cambiar COM4 y COM6 si es necesario)
 try:
-    arduino_derecha = serial.Serial('COM3', 115200, timeout=1)
+    arduino_derecha = serial.Serial('COM6', 115200, timeout=1)
     arduino_derecha.flushInput()
     arduino_derecha.flushOutput()
     print("Conexión establecida con Arduino derecha")
@@ -17,7 +17,7 @@ except serial.SerialException:
     print("Error al conectar con Arduino derecha")
 
 try:
-    arduino_izquierda = serial.Serial('COM10', 115200, timeout=1)
+    arduino_izquierda = serial.Serial('COM3', 115200, timeout=1)
     arduino_izquierda.flushInput()
     arduino_izquierda.flushOutput()
     print("Conexión establecida con Arduino izquierda")
@@ -91,5 +91,5 @@ if 'arduino_izquierda' in globals() and arduino_izquierda.is_open:
     arduino_izquierda.close()
 
 # Guardar los datos en archivos CSV
-df_derecha.to_csv('datos_derecha_sin_proteccion_7.csv', index=False)
-df_izquierda.to_csv('datos_izquierda_sin_proteccion_7.csv', index=False)
+df_derecha.to_csv('datos_derecha_sin_16.csv', index=False)
+df_izquierda.to_csv('datos_izquierda_sin_16.csv', index=False)
