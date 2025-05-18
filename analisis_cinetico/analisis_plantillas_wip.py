@@ -71,6 +71,7 @@ for f in archivos_csv:
 
 # Lista de nombres de archivos sin la extensión
 variables = [os.path.splitext(f)[0] for f in archivos_csv]
+print(variables)
 
 # Filtrar los DataFrames en listas separadas
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
@@ -429,8 +430,6 @@ else:
     plt.show()
 
 
-
-'''
 def minimos(sums_der, sums_izq):
     min_indices_der = []
     min_indices_izq = []
@@ -1078,4 +1077,3 @@ graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_ind
 graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, n_ciclos=2)
 
 plt.show()
-'''
