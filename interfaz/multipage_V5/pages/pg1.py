@@ -3,7 +3,8 @@ from dash import dcc, html, callback, Output, Input
 
 import dash_bootstrap_components as dbc
 
-dash.register_page(__name__, path='/', name='Home') # '/' is home page
+dash.register_page(__name__, path='/', name='Home',  icon="house") # '/' is home page
+
 
 layout = html.Div(
     [
