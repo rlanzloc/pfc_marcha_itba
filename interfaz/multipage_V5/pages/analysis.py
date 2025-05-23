@@ -23,6 +23,7 @@ RANGOS_Y = {
 
 layout = dbc.Container([
     dcc.Store(id='stored-data'),
+    dcc.Store(id='session-stored-data', storage_type='session'), 
     dbc.Row([
         dbc.Col(html.H1("Análisis de Marcha", className="text-center mb-4", style={
             'color': '#2c3e50',
@@ -69,7 +70,7 @@ layout = dbc.Container([
 @callback(
     Output('tabs-container', 'children'),
     Output('tabs-container', 'style'),
-    Input('stored-data', 'data')
+    Input('session-stored-data', 'data') 
 )
 
 def show_hide_tabs(stored_data):
@@ -102,24 +103,33 @@ def show_hide_tabs(stored_data):
                 'backgroundColor': 'white',
                 'color': '#2c3e50'
             },
-            children=[
+           children=[
                 dbc.Row([
                     dbc.Col([
-                        dcc.Dropdown(
-                            id='lado-dropdown',
-                            options=[
-                                {'label': 'Derecha', 'value': 'Derecha'},
-                                {'label': 'Izquierda', 'value': 'Izquierda'},
-                                {'label': 'Ambos', 'value': 'Ambos'}
-                            ],
-                            value='Ambos',
-                            clearable=False,
-                            style={
-                                'borderRadius': '5px',
-                                'borderColor': '#ced4da'
-                            }
+                        html.Div(
+                            dcc.RadioItems(
+                                id='lado-dropdown',
+                                options=[
+                                    {'label': ' Derecho', 'value': 'Derecha'},
+                                    {'label': ' Izquierdo', 'value': 'Izquierda'},
+                                    {'label': ' Ambos', 'value': 'Ambos'}
+                                ],
+                                value='Ambos',
+                                inline=True,
+                                inputStyle={'margin-right': '5px'},
+                                labelStyle={
+                                    'display': 'inline-block',
+                                    'margin-right': '15px',
+                                    'cursor': 'pointer'
+                                },
+                                style={
+                                    'fontSize': '16px',
+                                    'padding': '10px 0'
+                                }
+                            ),
+                            style={'margin-bottom': '20px'}
                         )
-                    ], width=4)
+                    ], width=12)
                 ], className="mb-4"),
                 dbc.Row(id='graphs-container')
             ]
@@ -163,7 +173,7 @@ def show_hide_tabs(stored_data):
 
 @callback(
     Output('parametros-container', 'children'),
-    Input('stored-data', 'data')
+     Input('session-stored-data', 'data')  # Cambiado a usar session-stored-data
 )
 
 
@@ -628,22 +638,20 @@ def update_parametros_espaciotemporales(stored_data):
 def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Derecha",
                       rango_z=(-20, 60), rango_y=(-30, 30), rango_x=(-30, 30), articulacion=""):
     
-    # Colores actualizados
+    # Colores y etiquetas
     colors = {
-        'Derecha': ['#FF5252'],  # Rojo moderno
-        'Izquierda': ['#4285F4'],  # Azul moderno
-        'Ambos': ['#FF5252', '#4285F4']  # Rojo y azul
-    }[posibilidad]
+        'Derecha': '#FF5252',  # Rojo
+        'Izquierda': '#4285F4',  # Azul
+    }
     
     labels = {
-        'Derecha': ["Derecha"],
-        'Izquierda': ["Izquierda"],
-        'Ambos': ["Derecha", "Izquierda"]
-    }[posibilidad]
+        'Derecha': 'Derecho',
+        'Izquierda': 'Izquierdo'
+    }
 
-    light_color = {
-        '#FF5252': 'rgba(255, 82, 82, 0.2)',  # Rojo claro
-        '#4285F4': 'rgba(66, 133, 244, 0.2)',  # Azul claro
+    light_colors = {
+        '#FF5252': 'rgba(255, 82, 82, 0.2)',
+        '#4285F4': 'rgba(66, 133, 244, 0.2)'
     }
 
     fig = make_subplots(
@@ -657,9 +665,22 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
         horizontal_spacing=0.08
     )
 
-    show_legend_on = True
+    # Procesar cada lado según la selección
+    sides_to_plot = []
+    if posibilidad == 'Derecha' and curva_derecha is not None:
+        sides_to_plot.append(('Derecha', curva_derecha))
+    elif posibilidad == 'Izquierda' and curva_izquierda is not None:
+        sides_to_plot.append(('Izquierda', curva_izquierda))
+    elif posibilidad == 'Ambos':
+        if curva_derecha is not None:
+            sides_to_plot.append(('Derecha', curva_derecha))
+        if curva_izquierda is not None:
+            sides_to_plot.append(('Izquierda', curva_izquierda))
 
-    for curva, color, label in zip([c for c in [curva_derecha, curva_izquierda] if c is not None], colors, labels):
+    for side, curva in sides_to_plot:
+        color = colors[side]
+        label = labels[side]
+        
         Z_curves = np.array(curva["Z"].tolist())
         Y_curves = np.array(curva["Y"].tolist())
         X_curves = np.array(curva["X"].tolist())
@@ -675,23 +696,31 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
 
         fixed_time = np.linspace(0, 100, num=len(average_Z))
 
-        def add_trace_with_std(row, col, average, std, axis_label):
+        # Función para agregar trazos
+        def add_traces(row, col, average, std, axis):
+            # Solo mostrar leyenda en el primer gráfico (Z)
+            show_legend = col == 1
+            
+            # Línea de promedio
             fig.add_trace(go.Scatter(
                 x=fixed_time,
                 y=average,
                 line=dict(color=color, width=2),
-                name=f"{label}: Promedio" if show_legend_on else None,
+                name=f"{label}: Promedio",
                 legendgroup=label,
-                showlegend=show_legend_on
+                showlegend=show_legend,
+                mode='lines'
             ), row=row, col=col)
             
+            # Área de desviación estándar
             fig.add_trace(go.Scatter(
                 x=fixed_time,
                 y=average + std,
                 fill=None,
                 mode='lines',
                 line=dict(width=0),
-                showlegend=False
+                showlegend=False,
+                legendgroup=label
             ), row=row, col=col)
             
             fig.add_trace(go.Scatter(
@@ -700,17 +729,16 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
                 fill='tonexty',
                 mode='lines',
                 line=dict(width=0),
-                fillcolor=light_color[color],
-                name=f"{label}: Desviación estándar" if show_legend_on else None,
+                fillcolor=light_colors[color],
+                name=f"{label}: Desviación",
                 legendgroup=label,
-                showlegend=show_legend_on
+                showlegend=show_legend,
             ), row=row, col=col)
 
-        add_trace_with_std(1, 1, average_Z, std_Z, "Z")
-        add_trace_with_std(1, 2, average_Y, std_Y, "Y")
-        add_trace_with_std(1, 3, average_X, std_X, "X")
-
-        show_legend_on = False
+        # Agregar trazos para cada eje
+        add_traces(1, 1, average_Z, std_Z, "Z")
+        add_traces(1, 2, average_Y, std_Y, "Y")
+        add_traces(1, 3, average_X, std_X, "X")
 
     fig.update_layout(
         title_text=f"<b>Articulación de {articulacion.capitalize()}</b> - Ángulos por eje",
@@ -720,21 +748,23 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
         paper_bgcolor='rgba(0,0,0,0)',
         font=dict(family="Arial", size=12),
         legend=dict(
-            orientation="h",
+            orientation="v",
             yanchor="bottom",
-            y=1.02,
+            y=1.15,  # Posición vertical ajustada
             xanchor="center",
             x=0.5,
-            bgcolor='rgba(255,255,255,0.7)'
+            bgcolor='rgba(255,255,255,0.7)',
+            itemsizing='constant',
+            traceorder='normal'  # Orden normal de las leyendas
         ),
         margin=dict(l=40, r=40, t=100, b=40)
     )
 
-    # Configuración ejes con mejor estilo
-    for col in [1, 2, 3]:
+    # Configuración de ejes
+    for col, rango in zip([1, 2, 3], [rango_z, rango_y, rango_x]):
         fig.update_yaxes(
-            title_text=f"Ángulo (°)",
-            range=[rango_z, rango_y, rango_x][col-1],
+            title_text="Ángulo (°)",
+            range=rango,
             row=1, col=col,
             gridcolor='rgba(0,0,0,0.1)',
             zerolinecolor='rgba(0,0,0,0.2)'
@@ -749,10 +779,10 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
 
 
 
-
 @callback(
     [Output('output-c3d-upload', 'children'),
-     Output('stored-data', 'data')],
+     Output('stored-data', 'data'),
+     Output('session-stored-data', 'data')],  # Nueva salida
     Input('upload-c3d', 'contents'),
     State('upload-c3d', 'filename')
 )
@@ -771,18 +801,14 @@ def update_output(contents, filename):
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
         try:
-            # Crear un archivo temporal
             with tempfile.NamedTemporaryFile(delete=False, suffix=".c3d") as temp_file:
                 temp_file.write(decoded)
-                temp_filepath = temp_file.name  # Obtener la ruta
+                temp_filepath = temp_file.name
 
-            # Procesar el archivo C3D con la ruta
             curvas_tobillo_derecho, curvas_tobillo_izquierdo, curvas_rodilla_derecha, curvas_rodilla_izquierda, curvas_cadera_derecha, curvas_cadera_izquierda, parametros_espaciotemporales = procesar_archivo_c3d(temp_filepath)
 
-            # Eliminar el archivo temporal
             os.remove(temp_filepath)
 
-            # Agregar los resultados al diccionario
             results['tobillo_derecho'].extend(curvas_tobillo_derecho.to_dict('records'))
             results['tobillo_izquierdo'].extend(curvas_tobillo_izquierdo.to_dict('records'))
             results['rodilla_derecha'].extend(curvas_rodilla_derecha.to_dict('records'))
@@ -791,7 +817,7 @@ def update_output(contents, filename):
             results['cadera_izquierda'].extend(curvas_cadera_izquierda.to_dict('records'))
             results['parametros_espaciotemporales'] = parametros_espaciotemporales
             
-            return dbc.Alert(
+            alerta = dbc.Alert(
                 f"Archivo {filename} cargado correctamente",
                 color="success",
                 dismissable=True,
@@ -799,10 +825,11 @@ def update_output(contents, filename):
                     'margin': '10px 0',
                     'borderLeft': '4px solid #28a745'
                 }
-            ), results
+            )
+            return alerta, results, results  # Devuelve los datos a ambos almacenamientos
 
         except Exception as e:
-            return dbc.Alert(
+            alerta = dbc.Alert(
                 f"Error al procesar el archivo {filename}: {str(e)}",
                 color="danger",
                 dismissable=True,
@@ -810,10 +837,10 @@ def update_output(contents, filename):
                     'margin': '10px 0',
                     'borderLeft': '4px solid #dc3545'
                 }
-            ), None
-       
-
-    return html.Div(), None
+            )
+            return alerta, None, None
+    
+    return html.Div(), dash.no_update, dash.no_update  # No actualices los almacenamientos si no hay contenido
 
 
 
@@ -822,47 +849,63 @@ def update_output(contents, filename):
 @callback(
     Output('graphs-container', 'children'),
     [Input('lado-dropdown', 'value'),
-     Input('stored-data', 'data')]
+     Input('session-stored-data', 'data')]  
 )
 def update_graphs(lado, stored_data):
     if stored_data is None:
         return []
+    
+    # Mapear los valores de los radio buttons a los nombres usados en los datos
+    lado_map = {
+        'Derecha': 'derecho',
+        'Izquierda': 'izquierdo',
+        'Ambos': 'Ambos'
+    }
+    lado_seleccionado = lado_map.get(lado, 'Ambos')
 
-    # Convertir los datos de vuelta a DataFrames
-    curvas_tobillo_derecho = pd.DataFrame(stored_data['tobillo_derecho'])
-    curvas_tobillo_izquierdo = pd.DataFrame(stored_data['tobillo_izquierdo'])
-    curvas_rodilla_derecha = pd.DataFrame(stored_data['rodilla_derecha'])
-    curvas_rodilla_izquierda = pd.DataFrame(stored_data['rodilla_izquierda'])
-    curvas_cadera_derecha = pd.DataFrame(stored_data['cadera_derecha'])
-    curvas_cadera_izquierda = pd.DataFrame(stored_data['cadera_izquierda'])
+    # Convertir los datos a DataFrames
+    def crear_df(lado):
+        key = f'tobillo_{lado}'
+        return pd.DataFrame(stored_data[key]) if stored_data.get(key) else None
+    
+    curvas_tobillo_derecho = crear_df('derecho')
+    curvas_tobillo_izquierdo = crear_df('izquierdo')
+    curvas_rodilla_derecha = pd.DataFrame(stored_data['rodilla_derecha']) if stored_data.get('rodilla_derecha') else None
+    curvas_rodilla_izquierda = pd.DataFrame(stored_data['rodilla_izquierda']) if stored_data.get('rodilla_izquierda') else None
+    curvas_cadera_derecha = pd.DataFrame(stored_data['cadera_derecha']) if stored_data.get('cadera_derecha') else None
+    curvas_cadera_izquierda = pd.DataFrame(stored_data['cadera_izquierda']) if stored_data.get('cadera_izquierda') else None
 
     graphs = []
 
-    # Generar gráficos para todas las articulaciones
-    articulaciones = ['tobillo', 'rodilla', 'cadera']
-    for articulacion in articulaciones:
-        if articulacion == "tobillo":
-            curva_derecha = curvas_tobillo_derecho
-            curva_izquierda = curvas_tobillo_izquierdo
-            rango_z, rango_y, rango_x = RANGOS_Y["tobillo"].values()
-        elif articulacion == "rodilla":
-            curva_derecha = curvas_rodilla_derecha
-            curva_izquierda = curvas_rodilla_izquierda
-            rango_z, rango_y, rango_x = RANGOS_Y["rodilla"].values()
-        elif articulacion == "cadera":
-            curva_derecha = curvas_cadera_derecha
-            curva_izquierda = curvas_cadera_izquierda
-            rango_z, rango_y, rango_x = RANGOS_Y["cadera"].values()
+    articulaciones = [
+        ('tobillo', curvas_tobillo_derecho, curvas_tobillo_izquierdo, RANGOS_Y["tobillo"]),
+        ('rodilla', curvas_rodilla_derecha, curvas_rodilla_izquierda, RANGOS_Y["rodilla"]),
+        ('cadera', curvas_cadera_derecha, curvas_cadera_izquierda, RANGOS_Y["cadera"])
+    ]
 
-        # Generar el gráfico combinado con subplots
-        fig = final_plot_plotly(curva_derecha, curva_izquierda, posibilidad=lado,
-                               rango_z=rango_z, rango_y=rango_y, rango_x=rango_x,
-                               articulacion=articulacion)
+    for articulacion, curva_derecha, curva_izquierda, rangos in articulaciones:
+        rango_z, rango_y, rango_x = rangos.values()
+        
+        # Determinar qué curvas mostrar según la selección
+        if lado_seleccionado == 'derecho' and curva_derecha is not None:
+            curvas_a_mostrar = (curva_derecha, None)
+        elif lado_seleccionado == 'izquierdo' and curva_izquierda is not None:
+            curvas_a_mostrar = (None, curva_izquierda)
+        elif lado_seleccionado == 'Ambos':
+            curvas_a_mostrar = (curva_derecha, curva_izquierda)
+        else:
+            continue  # No hay datos para mostrar
 
-        # Agregar el gráfico combinado a la lista
-        graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))  # Usar ancho completo por gráfica integrada
+        fig = final_plot_plotly(
+            curvas_a_mostrar[0],  # Curva derecha
+            curvas_a_mostrar[1],  # Curva izquierda
+            posibilidad=lado,
+            rango_z=rango_z,
+            rango_y=rango_y,
+            rango_x=rango_x,
+            articulacion=articulacion
+        )
+        
+        graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))
 
-    # Retornar solo 3 gráficos combinados
-    return graphs
-
-
+    return graphs if graphs else dbc.Alert("No hay datos disponibles para la selección actual", color="warning")
