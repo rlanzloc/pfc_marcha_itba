@@ -2,94 +2,112 @@ import serial
 import pandas as pd
 from datetime import datetime
 import threading
+import time
 
-# Inicializar DataFrame con 8 sensores más una columna de tiempo para cada pie
+# Initialize DataFrames for both feet
 df_izquierda = pd.DataFrame(columns=['Hora', 'Tiempo'] + [f"Izquierda_S{i+1}" for i in range(8)])
 df_derecha = pd.DataFrame(columns=['Hora', 'Tiempo'] + [f"Derecha_S{i+1}" for i in range(8)])
 
-# Inicializar Arduinos (cambiar COM4 y COM6 si es necesario)
+# Initialize Arduino connections
+arduino_derecha = None
+arduino_izquierda = None
+
 try:
     arduino_derecha = serial.Serial('COM6', 115200, timeout=1)
     arduino_derecha.flushInput()
     arduino_derecha.flushOutput()
-    print("Conexión establecida con Arduino derecha")
-except serial.SerialException:
-    print("Error al conectar con Arduino derecha")
+    print("Conexión establecida con Arduino derecha (COM6)")
+except serial.SerialException as e:
+    print(f"Error al conectar con Arduino derecha: {e}")
 
 try:
     arduino_izquierda = serial.Serial('COM3', 115200, timeout=1)
     arduino_izquierda.flushInput()
     arduino_izquierda.flushOutput()
-    print("Conexión establecida con Arduino izquierda")
-except serial.SerialException:
-    print("Error al conectar con Arduino izquierda")
+    print("Conexión establecida con Arduino izquierda (COM3)")
+except serial.SerialException as e:
+    print(f"Error al conectar con Arduino izquierda: {e}")
 
-# Variable para controlar el bucle de lectura
+# Control variable for reading loop
 running = True
 
 def leer_datos(arduino, dataframe, pie):
-    """Función para leer datos del Arduino y guardarlos en un DataFrame."""
+    """Improved function to read data from Arduino with proper exit handling"""
     global running
     while running:
-        if arduino.in_waiting > 0:
-            try:
+        try:
+            if arduino.in_waiting > 0:
                 linea = arduino.readline().decode('utf-8').strip()
-                datos = linea.split(',')
-                if len(datos) == 9:
-                    hora_actual = datetime.now().strftime('%H:%M:%S.%f')
-                    tiempo_arduino = datos[0]
-                    
-                    # Obtener valores de sensores
-                    valores_sensores = [int(valor) for valor in datos[1:9]]  # Sensores 1-8
-                    
-                    # Invertir orden SOLO para el pie izquierdo
-                    if pie == "Izquierda":
-                        valores_sensores = valores_sensores[::-1]  # Invierte la lista
-                    
-                    # Crear fila como diccionario
-                    nueva_fila = {'Hora': hora_actual, 'Tiempo': tiempo_arduino}
-                    for i in range(8):
-                        nueva_fila[f"{pie}_S{i+1}"] = valores_sensores[i]
-                    
-                    dataframe.loc[len(dataframe)] = nueva_fila
-                    
-                    # Imprimir datos (incluyendo el orden invertido si es izquierdo)
-                    print(f"{pie} - Hora: {hora_actual}, Tiempo: {tiempo_arduino}, Sensores: {valores_sensores}")
-                    
-            except Exception as e:
+                if linea:
+                    datos = linea.split(',')
+                    if len(datos) == 9:
+                        hora_actual = datetime.now().strftime('%H:%M:%S.%f')
+                        tiempo_arduino = datos[0]
+                        
+                        # Get sensor values
+                        valores_sensores = [int(valor) for valor in datos[1:9]]
+                        
+                        # Reverse order ONLY for left foot
+                        if pie == "Izquierda":
+                            valores_sensores = valores_sensores[::-1]
+                        
+                        # Create new row
+                        nueva_fila = {'Hora': hora_actual, 'Tiempo': tiempo_arduino}
+                        for i in range(8):
+                            nueva_fila[f"{pie}_S{i+1}"] = valores_sensores[i]
+                        
+                        dataframe.loc[len(dataframe)] = nueva_fila
+                        print(f"{pie} - Hora: {hora_actual}, Tiempo: {tiempo_arduino}, Sensores: {valores_sensores}")
+            else:
+                time.sleep(0.05)  # Small sleep to prevent CPU overuse
+        except Exception as e:
+            if running:  # Only print errors if we're still running
                 print(f"Error al leer datos de {pie}: {e}")
 
-# Crear hilos para leer datos de ambos pies si las conexiones son exitosas
-hilos = []
+# Create and start threads
+threads = []
 
-if 'arduino_derecha' in globals() and arduino_derecha.is_open:
+if arduino_derecha and arduino_derecha.is_open:
     hilo_derecha = threading.Thread(target=leer_datos, args=(arduino_derecha, df_derecha, "Derecha"))
-    hilos.append(hilo_derecha)
+    hilo_derecha.daemon = True  # Set as daemon thread to exit when main thread exits
+    threads.append(hilo_derecha)
     hilo_derecha.start()
     print("Hilo de lectura para pie derecho iniciado")
 
-
-if 'arduino_izquierda' in globals() and arduino_izquierda.is_open:
+if arduino_izquierda and arduino_izquierda.is_open:
     hilo_izquierda = threading.Thread(target=leer_datos, args=(arduino_izquierda, df_izquierda, "Izquierda"))
-    hilos.append(hilo_izquierda)
+    hilo_izquierda.daemon = True  # Set as daemon thread
+    threads.append(hilo_izquierda)
     hilo_izquierda.start()
     print("Hilo de lectura para pie izquierdo iniciado")
 
+# Wait for ENTER press with timeout checks
+try:
+    input("Presiona ENTER para finalizar...\n")
+except KeyboardInterrupt:
+    print("\nInterrupción por teclado recibida")
 
-# Mantener el programa corriendo hasta que se presione Enter
-input("Presiona ENTER para finalizar...\n")
 running = False
+print("Deteniendo hilos...")
 
-# Esperar a que ambos hilos terminen
-for hilo in hilos:
-    hilo.join()
+# Wait for threads to finish (with timeout)
+for thread in threads:
+    thread.join(timeout=2.0)  # 2 second timeout
 
-# Cerrar conexiones seriales
-if 'arduino_derecha' in globals() and arduino_derecha.is_open:
+# Close serial connections
+if arduino_derecha and arduino_derecha.is_open:
     arduino_derecha.close()
-if 'arduino_izquierda' in globals() and arduino_izquierda.is_open:
+    print("Conexión con Arduino derecha cerrada")
+if arduino_izquierda and arduino_izquierda.is_open:
     arduino_izquierda.close()
+    print("Conexión con Arduino izquierda cerrada")
 
-# Guardar los datos en archivos CSV
-df_derecha.to_csv('datos_derecha_sin_16.csv', index=False)
-df_izquierda.to_csv('datos_izquierda_sin_16.csv', index=False)
+# Save data to CSV
+try:
+    df_derecha.to_csv('datos_derecha_S3_3.csv', index=False)
+    df_izquierda.to_csv('datos_izquierda_S3_3.csv', index=False)
+    print("Datos guardados exitosamente")
+except Exception as e:
+    print(f"Error al guardar archivos CSV: {e}")
+
+print("Programa terminado")

@@ -318,44 +318,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
 
 filt_der, filt_izq, sums_der, sums_izq, dataframes_der, dataframes_izq, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq)
 
-# ==================================================
-# GRÁFICOS 
-# ==================================================
-
-# Pie DERECHO 
-
-der = dataframes_der
-if len(der) == 0:
-    print("No hay datos de PIE DERECHO para graficar.")
-else:
-    fig_der_kg, axes = plt.subplots(len(der), 1, figsize=(12, 2.5 * len(der)))
-    if len(der) == 1:
-        axes = [axes]
-    
-    for i, df in enumerate(der):
-        cols = [col for col in df.columns if col != 'Tiempo']
-        df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie DERECHO - Pasada {i+2}', pad=10)
-    
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)
-   
-izq = dataframes_izq
-# Pie IZQUIERDO 
-if len(izq) == 0:
-    print("No hay datos de PIE IZQUIERDO para graficar.")
-else:
-    fig_izq_kg, axes = plt.subplots(len(izq), 1, figsize=(12, 2.5 * len(izq)))
-    if len(izq) == 1:
-        axes = [axes]
-    
-    for i, df in enumerate(izq):
-        cols = [col for col in df.columns if col != 'Tiempo']
-        df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie IZQUIERDO - Pasada {i+2}', pad=10)
-    
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)
  
 ######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
 
@@ -401,35 +363,6 @@ for i, (sum_der, sum_izq, filt_d, filt_i) in enumerate(zip(sums_der, sums_izq, f
     filt_izq[i] = subset(filt_i, ti, tf_izq)
 
 
-# Definir cantidad de pasadas
-num_pasadas = max(len(sums_der), len(sums_izq))
-
-# Evitar error si no hay datos
-if num_pasadas == 0:
-    print("No data to plot.")
-else:
-    # Crear figura y subplots (una fila por pasada, dos señales en cada subplot)
-    fig, axes = plt.subplots(nrows=num_pasadas, ncols=1, figsize=(10, num_pasadas * 3), squeeze=False)
-    axes = axes.flatten()  # Convertir en un array 1D para acceso fácil
-
-    # Iterar sobre las pasadas
-    for i in range(num_pasadas):
-        if i < len(sums_der):
-            sums_der[i].plot(ax=axes[i], label="Derecha", color='b')
-
-        if i < len(sums_izq):
-            sums_izq[i].plot(ax=axes[i], label="Izquierda", color='g')
-
-        axes[i].set_title(f'Suma de fuerzas (N) - Pasada N°{i+2}')
-        axes[i].set_xlabel('Tiempo')
-        axes[i].set_ylabel('Valores')
-        #axes[i].set_xlim(14, 24)  # Ajusta si es necesario
-        axes[i].legend()
-
-    plt.tight_layout()
-    plt.show()
-
-
 def minimos(sums_der, sums_izq):
     min_indices_der = []
     min_indices_izq = []
@@ -455,18 +388,299 @@ def minimos(sums_der, sums_izq):
     return min_indices_der, min_indices_izq, min_tiempos_der, min_tiempos_izq
 
 
+def subset_time(sum_der, sum_izq, t_inicio, t_fin):
+    sum_der_subset = subset(sum_der, t_inicio, t_fin)
+    sum_izq_subset = subset(sum_izq, t_inicio, t_fin)
+    
+    return sum_der_subset, sum_izq_subset
+    
+sums_der_subset = []
+sums_izq_subset = []
 
-# Definir el rango de tiempo deseado
-t_inicio = 5  # Cambia estos valores según tu necesidad
-t_fin = 15
+sum_der_subset, sum_izq_subset = subset_time(sums_der[0], sums_izq[0], 18, 28)
+sums_der_subset.append(sum_der_subset)
+sums_izq_subset.append(sum_izq_subset)
 
-sums_der_subset = subset(sums_der, t_inicio, t_fin)
-sums_izq_subset = subset(sums_izq, t_inicio, t_fin)
 
-filt_der_subset = subset(filt_der, t_inicio, t_fin)
-filt_izq_subset = subset (filt_izq, t_inicio, t_fin)
+sum_der_subset, sum_izq_subset = subset_time(sums_der[1], sums_izq[1], 10, 20)
+sums_der_subset.append(sum_der_subset)
+sums_izq_subset.append(sum_izq_subset)
+
+'''
+sum_der_subset, sum_izq_subset = subset_time(sums_der[2], sums_izq[2], 15, 25)
+sums_der_subset.append(sum_der_subset)
+sums_izq_subset.append(sum_izq_subset)
+'''
+
+filt_der_subset = []
+filt_izq_subset = []
+
+filt_der_sub, filt_izq_sub = subset_time(filt_der[0], filt_izq[0], 18, 28)
+filt_der_subset.append(filt_der_sub)
+filt_izq_subset.append(filt_izq_sub)
+
+
+filt_der_sub, filt_izq_sub = subset_time(filt_der[1], filt_izq[1], 10, 20)
+filt_der_subset.append(filt_der_sub)
+filt_izq_subset.append(filt_izq_sub)
+
+'''
+filt_der_sub, filt_izq_sub = subset_time(filt_der[2], filt_izq[2], 15, 20)
+filt_der_subset.append(filt_der_sub)
+filt_izq_subset.append(filt_izq_sub)
+'''
+
+sensor_der_CF = [df[["Derecha_S5"]] for df in filt_der_subset if "Derecha_S5" in df.columns]
+sensor_izq_CF = [df[["Izquierda_S5"]] for df in filt_izq_subset if "Izquierda_S5" in df.columns]
+
+
+# lista_dfs es tu lista original de DataFrames (con estructura correcta)
+sensor_der_diff = []
+for df in sensor_der_CF:
+    tiempo = df.index.values          # Extrae el tiempo del índice
+    señal = df["Derecha_S5"].values   # Extrae los valores del sensor
+    
+    # Calcula la derivada (usa np.gradient para datos no uniformes)
+    derivada = np.gradient(señal, tiempo)
+    
+    # Crea un DataFrame con la derivada (mismo índice que el original)
+    df_derivada = pd.DataFrame(
+        derivada, 
+        index=df.index, 
+        columns=["Derecha_S5"]
+    )
+    sensor_der_diff.append(df_derivada)
+
+
+# lista_dfs es tu lista original de DataFrames (con estructura correcta)
+sensor_izq_diff = []
+for df in sensor_izq_CF:
+    tiempo = df.index.values          # Extrae el tiempo del índice
+    señal = df["Izquierda_S5"].values   # Extrae los valores del sensor
+    
+    # Calcula la derivada (usa np.gradient para datos no uniformes)
+    derivada = np.gradient(señal, tiempo)
+    
+    # Crea un DataFrame con la derivada (mismo índice que el original)
+    df_derivada = pd.DataFrame(
+        derivada, 
+        index=df.index, 
+        columns=["Izquierda_S5"]
+    )
+    sensor_izq_diff.append(df_derivada)
+
+
+n_pasadas = len(sensor_der_CF)  # Número de subplots necesarios
+
+# Crear figura con subplots (1 columna, n_pasadas filas)
+fig, axes = plt.subplots(n_pasadas, 1, figsize=(10, 5 * n_pasadas), squeeze=False)
+axes = axes.flatten()  # Para simplificar el acceso si hay solo 1 subplot
+
+for i, (df_original, df_derivada) in enumerate(zip(sensor_der_CF, sensor_der_diff)):
+    ax = axes[i]
+    
+    # Graficar señal original
+    ax.plot(df_original.index, df_original["Derecha_S5"], 
+            color='blue', label='Señal original')
+    
+    # Graficar derivada (en el mismo eje o en uno secundario)
+    ax_derivada = ax.twinx()  # Eje Y secundario
+    ax_derivada.plot(df_derivada.index, df_derivada["Derecha_S5"], 
+                     color='red', linestyle='--', label='Derivada')
+    
+    # Ajustes de estilo
+    ax.set_title(f"Pasada {i+1}")
+    ax.set_xlabel("Tiempo")
+    ax.set_ylabel("Señal original (azul)", color='blue')
+    ax_derivada.set_ylabel("Derivada (rojo)", color='red')
+    
+    # Mostrar leyendas
+    ax.legend(loc='upper left')
+    ax_derivada.legend(loc='upper right')
+
+plt.tight_layout()  # Evita solapamiento
+
+
+n_pasadas = len(sensor_izq_CF)  # Número de subplots necesarios
+
+# Crear figura con subplots (1 columna, n_pasadas filas)
+fig, axes = plt.subplots(n_pasadas, 1, figsize=(10, 5 * n_pasadas), squeeze=False)
+axes = axes.flatten()  # Para simplificar el acceso si hay solo 1 subplot
+
+for i, (df_original, df_derivada) in enumerate(zip(sensor_izq_CF, sensor_izq_diff)):
+    ax = axes[i]
+    
+    # Graficar señal original
+    ax.plot(df_original.index, df_original["Izquierda_S5"], 
+            color='blue', label='Señal original')
+    
+    # Graficar derivada (en el mismo eje o en uno secundario)
+    ax_derivada = ax.twinx()  # Eje Y secundario
+    ax_derivada.plot(df_derivada.index, df_derivada["Izquierda_S5"], 
+                     color='red', linestyle='--', label='Derivada')
+    
+    # Ajustes de estilo
+    ax.set_title(f"Pasada {i+1}")
+    ax.set_xlabel("Tiempo")
+    ax.set_ylabel("Señal original (azul)", color='blue')
+    ax_derivada.set_ylabel("Derivada (rojo)", color='red')
+    
+    # Mostrar leyendas
+    ax.legend(loc='upper left')
+    ax_derivada.legend(loc='upper right')
+
+plt.tight_layout()  # Evita solapamiento
+plt.show()
+
 
 min_indices_der, min_indices_izq, min_tiempos_der, min_tiempos_izq = minimos(sums_der_subset, sums_izq_subset)
+
+'''
+def graficar_sensores(dataframes, lado_pie, sensores_a_graficar):
+    if len(dataframes) == 0:
+        print(f"No hay datos de PIE {lado_pie.upper()} para graficar.")
+        return None
+    
+    fig, axes = plt.subplots(len(dataframes), 1, figsize=(12, 2.5 * len(dataframes)))
+    if len(dataframes) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(dataframes):
+        cols = [col for col in sensores_a_graficar if col in df.columns]
+        df[cols].plot( ax=axes[i])
+        axes[i].set_title(f'Pie {lado_pie.upper()} - Pasada {i+2}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+    return fig
+
+# Define qué sensores quieres graficar
+sensores_der = ['Derecha_S5','Derecha_S6', 'Derecha_S7', 'Derecha_S8']
+sensores_izq = ['Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7', 'Izquierda_S8']
+
+# Grafica
+fig_der = graficar_sensores(filt_der_subset, "derecho", sensores_der)
+fig_izq = graficar_sensores(filt_izq_subset, "izquierdo", sensores_izq)
+
+# Lista para almacenar las sumas de los sensores HS (6,7,8)
+sums_der_por_region = []
+sums_izq_por_region = []
+
+# Iterar sobre los DataFrames en filt_der_subset (Pie derecho)
+for filtered_df in filt_der_subset:
+    # Seleccionar solo las columnas de los sensores 6, 7, 8
+    hs_sensors = filtered_df[sensores_der]  # Ajusta los nombres si son diferentes
+    
+    # Sumar las columnas (a lo largo de las filas, axis=1)
+    sum_der = hs_sensors.sum(axis=1)
+    
+    # Agregar el resultado a la lista (convertir a DataFrame si es necesario)
+    sums_der_por_region.append(sum_der.to_frame() if not isinstance(sum_der, pd.DataFrame) else sum_der)
+
+# Iterar sobre los DataFrames en filt_izq_subset (Pie izquierdo)
+for filtered_df in filt_izq_subset:
+    # Seleccionar solo las columnas de los sensores 6, 7, 8
+    hs_sensors = filtered_df[sensores_izq]  # Ajusta los nombres si son diferentes
+    
+    # Sumar las columnas (a lo largo de las filas, axis=1)
+    sum_izq = hs_sensors.sum(axis=1)
+    
+    # Agregar el resultado a la lista (convertir a DataFrame si es necesario)
+    sums_izq_por_region.append(sum_izq.to_frame() if not isinstance(sum_izq, pd.DataFrame) else sum_izq)
+'''
+# ==================================================
+# GRÁFICOS 
+# ==================================================
+
+# Pie DERECHO 
+
+der = filt_der
+if len(der) == 0:
+    print("No hay datos de PIE DERECHO para graficar.")
+else:
+    fig_der_kg, axes = plt.subplots(len(der), 1, figsize=(12, 2.5 * len(der)))
+    if len(der) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(der):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i])
+        axes[i].set_title(f'Pie DERECHO - Pasada {i+2}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+   
+izq = filt_izq
+# Pie IZQUIERDO 
+if len(izq) == 0:
+    print("No hay datos de PIE IZQUIERDO para graficar.")
+else:
+    fig_izq_kg, axes = plt.subplots(len(izq), 1, figsize=(12, 2.5 * len(izq)))
+    if len(izq) == 1:
+        axes = [axes]
+    
+    for i, df in enumerate(izq):
+        cols = [col for col in df.columns if col != 'Tiempo']
+        df[cols].plot(ax=axes[i])
+        axes[i].set_title(f'Pie IZQUIERDO - Pasada {i+2}', pad=10)
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.4)
+
+plt.show()
+
+def plot_signal_comparison(data_left, data_right, 
+                          left_name="Izquierda", right_name="Derecha",
+                          signal_name="fuerzas (N)", 
+                          x_label='Tiempo', y_label='Valores',
+                          left_color='b', right_color='r'):
+    """
+    Función para comparar señales entre pie izquierdo y derecho
+    
+    Parámetros:
+    -----------
+    data_left: lista de DataFrames con datos del pie izquierdo
+    data_right: lista de DataFrames con datos del pie derecho
+    left_name: nombre para la leyenda del pie izquierdo
+    right_name: nombre para la leyenda del pie derecho
+    signal_name: descripción de la señal que se está graficando
+    x_label: etiqueta para el eje X
+    y_label: etiqueta para el eje Y
+    left_color: color para el pie izquierdo
+    right_color: color para el pie derecho
+    """
+    
+    # Definir cantidad de pasadas
+    num_pasadas = max(len(data_right), len(data_left))
+
+    # Evitar error si no hay datos
+    if num_pasadas == 0:
+        print("No hay datos para graficar.")
+        return
+
+    # Crear figura y subplots
+    fig, axes = plt.subplots(nrows=num_pasadas, ncols=1, 
+                           figsize=(10, num_pasadas * 3), 
+                           squeeze=False)
+    axes = axes.flatten()
+
+    # Iterar sobre las pasadas
+    for i in range(num_pasadas):
+        if i < len(data_right):
+            data_right[i].plot(ax=axes[i], label=right_name, color=right_color)
+
+        if i < len(data_left):
+            data_left[i].plot(ax=axes[i], label=left_name, color=left_color)
+
+        axes[i].set_title(f'Suma de {signal_name} - Pasada N°{i+2}')
+        axes[i].set_xlabel(x_label)
+        axes[i].set_ylabel(y_label)
+        axes[i].legend()
+
+    plt.tight_layout()
+    plt.show()
+    
+plot_signal_comparison(sums_izq_subset, sums_der_subset)
 
 
 def extraer_ciclos(series_list, min_indices_list):
@@ -495,7 +709,6 @@ def extraer_ciclos(series_list, min_indices_list):
 
 ciclos_der = extraer_ciclos(sums_der_subset, min_indices_der)
 ciclos_izq = extraer_ciclos(sums_izq_subset, min_indices_izq)
-
 
 def improved_vGRF_detection(pasadas, min_indices, time_threshold=0.2, 
                           min_prominence_factor=0.05, min_peak_height=0.1):
@@ -646,10 +859,12 @@ results_izq = improved_vGRF_detection(
     min_peak_height=0.1 # Reducir para incluir picos más pequeños
 )
 
+
 # 2. Visualizar con diagnóstico
 plot_with_diagnosis(sums_der_subset, results_der, min_indices_der)
 # 2. Visualizar con diagnóstico
 plot_with_diagnosis(sums_izq_subset, results_izq, min_indices_izq)
+
 
 
 def calcular_aportes_sensores(pasadas_crudas, resultados_deteccion, min_indices):
@@ -813,12 +1028,13 @@ def calcular_aportes_por_fase(pasadas_crudas, resultados_deteccion, min_indices)
 aportes_por_fase_der = calcular_aportes_por_fase(filt_der, results_der, min_indices_der)
 aportes_por_fase_izq = calcular_aportes_por_fase(filt_izq, results_izq, min_indices_izq)
 
+'''
 for ciclo in aportes_por_fase_der['por_ciclo']:
     print(f"Pasada {ciclo['pasada']}, Ciclo {ciclo['ciclo']}:")
     for fase, aporte in ciclo['aportes_por_fase'].items():
         print(f"  {fase}:")
         print((aporte * 100).round(2).astype(str) + " %")
-
+'''
 
 
 # Lista original de sensores
@@ -874,15 +1090,17 @@ def plot_footprint_ciclo_unico(aporte_ciclo, sensor_coords, pie='R'):
     cbar = fig.colorbar(sc, ax=axs, orientation='vertical', fraction=0.015, pad=0.04)
     cbar.set_label('Aporte relativo')
    
-
+'''
 # Tomar el ciclo 0
 ciclo_0 = aportes_por_fase_der['por_ciclo'][0]['aportes_por_fase']
 plot_footprint_ciclo_unico(ciclo_0, sensor_coords_der, pie='R')
 
 ciclo_0 = aportes_por_fase_izq['por_ciclo'][0]['aportes_por_fase']
 plot_footprint_ciclo_unico(ciclo_0, sensor_coords_izq, pie='L')
+'''
 
-
+'''
+################### CURVA SUMA TOTAL ###########################
 def graficar_suma_por_fases(sums_data, res_pasada, min_indices, ciclo_num=1):
     """
     Grafica la suma de sensores para un ciclo específico, resaltando las fases.
@@ -969,18 +1187,23 @@ def graficar_suma_multiple_ciclos(sums_data_list, resultados_deteccion, min_indi
             ciclos_graficados += 1
 
 graficar_suma_multiple_ciclos(sums_der_subset, results_der, min_indices_der, n_ciclos=2)
+plt.show()
+'''
 
 
-def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=0):
+################### CURVA ELIMINANDO SENSORES SEGUN FASE ############################
+def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=2, lado="R"):
     """
-    Grafica la suma de sensores y cada sensor individual para un ciclo específico, resaltando las fases.
-    
+    Grafica la suma total de sensores, la suma específica por fase y cada sensor individual para un ciclo,
+    resaltando las fases.
+
     Args:
         df_sensores_list: Lista de DataFrames (uno por pasada), cada uno con columnas por sensor
         res_pasada: Resultados de detección para la pasada
         min_indices: Índices de inicio/fin de ciclos para esta pasada
         ciclo_num: Número del ciclo a graficar (1-based)
         pasada_index: Índice de la pasada en df_sensores_list
+        lado: "R" para pie derecho, "L" para pie izquierdo
     """
     if not res_pasada['valid']:
         print("Pasada no válida.")
@@ -995,7 +1218,7 @@ def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indic
     inicio = min_indices[ciclo_num - 1]
     fin = min_indices[ciclo_num]
     datos_ciclo = df_ciclo.iloc[inicio:fin].copy().reset_index(drop=True)
-    suma_ciclo = datos_ciclo.sum(axis=1)
+    suma_total = datos_ciclo.sum(axis=1)
 
     peaks = ciclo_info['peaks']
     valleys = ciclo_info['valleys']
@@ -1007,7 +1230,287 @@ def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indic
     p1, p2 = peaks[0], peaks[1]
     v = valleys[0]
 
-    # Fases del ciclo
+    segmentos = {
+        'loading_response': (0, p1),
+        'midstance': (p1, v),
+        'terminal_stance': (v, p2),
+        'pre_swing': (p2, len(datos_ciclo) - 1)
+    }
+    
+    colores_fases = {
+        'loading_response': 'red',
+        'midstance': 'green',
+        'terminal_stance': 'blue',
+        'pre_swing': 'orange'
+    }
+
+    # Determinar sufijo
+    sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
+
+    sensores_por_fase = {
+        "loading_response": [f"{sufijo}_S3", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
+        "midstance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
+        "terminal_stance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5"],
+        "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S5", f"{sufijo}_S4" ],
+    }
+
+    plt.figure(figsize=(14, 6))
+
+    # Fases como bandas de color
+    for fase, (start, end) in segmentos.items():
+        plt.axvspan(start, end, color=colores_fases[fase], alpha=0.1, label=f'Fase: {fase}')
+
+    # Suma específica por fase
+    for fase, (start, end) in segmentos.items():
+        sensores_fase = sensores_por_fase.get(fase, [])
+        sensores_disponibles = [s for s in sensores_fase if s in datos_ciclo.columns]
+        if not sensores_disponibles:
+            continue
+        suma_fase = datos_ciclo.loc[start:end, sensores_disponibles].sum(axis=1)
+        plt.plot(range(start, end + 1), suma_fase, label=f'Suma {fase}', color=colores_fases[fase], linewidth=2)
+
+    # Curva total
+    plt.plot(suma_total, label='Suma total (todos los sensores)', color='black', linewidth=2, linestyle='--')
+
+    # Curvas individuales de sensores
+    colores_sensores = plt.cm.tab10.colors
+    for i, sensor in enumerate(datos_ciclo.columns):
+        plt.plot(datos_ciclo[sensor], label=sensor, color=colores_sensores[i % len(colores_sensores)], alpha=0.5)
+
+    # Eventos clave
+    plt.scatter([p1, p2], [suma_total.iloc[p1], suma_total.iloc[p2]], color='red', zorder=5, label='Picos')
+    plt.scatter([v], [suma_total.iloc[v]], color='blue', zorder=5, label='Valle')
+
+    plt.xlabel('Muestras')
+    plt.ylabel('Valor FSR')
+    plt.title(f'{sufijo} - Pasada {pasada_index+1} - Ciclo {ciclo_num} - Suma por fases, total e individuales')
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.tight_layout()
+
+def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_deteccion, min_indices_list, 
+                                              max_pasadas=None, max_ciclos_por_pasada=None, 
+                                              max_ciclos_totales=None, lado="R"):
+    """
+    Grafica la suma de sensores y sensores individuales para todos los ciclos válidos de múltiples pasadas,
+    con opciones para limitar la cantidad mostrada.
+    
+    Args:
+        sums_data_list: Lista de DataFrames con datos de sensores por pasada
+        resultados_deteccion: Lista de resultados de detección por pasada
+        min_indices_list: Lista de índices de ciclos por pasada
+        max_pasadas: Máximo número de pasadas a graficar (None para todas)
+        max_ciclos_por_pasada: Máximo ciclos a graficar por pasada (None para todos)
+        max_ciclos_totales: Máximo total de ciclos a graficar (None para todos)
+        lado: "R" para pie derecho, "L" para pie izquierdo
+    """
+    ciclos_graficados = 0
+
+    for pasada_index, (df_sensores, res_pasada, indices) in enumerate(zip(sums_data_list, resultados_deteccion, min_indices_list)):
+        # Verificar límite de pasadas
+        if max_pasadas is not None and pasada_index >= max_pasadas:
+            break
+            
+        if not res_pasada['valid']:
+            continue
+
+        ciclos_en_pasada = 0
+        
+        for ciclo_info in res_pasada['details']:
+            # Verificar límites de ciclos
+            if (not ciclo_info['is_valid'] or 
+                (max_ciclos_por_pasada is not None and ciclos_en_pasada >= max_ciclos_por_pasada) or
+                (max_ciclos_totales is not None and ciclos_graficados >= max_ciclos_totales)):
+                continue
+
+            graficar_suma_por_fases_con_sensores(
+                df_sensores_list=sums_data_list,
+                res_pasada=res_pasada,
+                min_indices=indices,
+                ciclo_num=ciclo_info['cycle_num'],
+                pasada_index=pasada_index,
+                lado=lado
+            )
+            
+            ciclos_graficados += 1
+            ciclos_en_pasada += 1
+
+
+graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, lado="R")
+graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, lado="L")
+plt.show()
+
+
+
+'''
+def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=0, lado="R"):
+    """
+    Grafica la suma total de sensores y la suma por fase para un ciclo,
+    con corrección para alinear correctamente picos y valles.
+
+    Args:
+        df_sensores_list: Lista de DataFrames con datos de sensores
+        res_pasada: Resultados de detección para la pasada
+        min_indices: Índices de inicio/fin de ciclos
+        ciclo_num: Número del ciclo a graficar
+        pasada_index: Índice de la pasada a analizar
+        lado: "R" (derecho) o "L" (izquierdo)
+    """
+    # Validación inicial
+    if not res_pasada['valid']:
+        print("Pasada no válida.")
+        return
+
+    # Obtener información del ciclo específico
+    ciclo_info = next((c for c in res_pasada['details'] 
+                     if c['cycle_num'] == ciclo_num and c['is_valid']), None)
+    if not ciclo_info:
+        print(f"Ciclo {ciclo_num} no válido o no encontrado.")
+        return
+
+    # Extraer datos del ciclo
+    df_pasada = df_sensores_list[pasada_index]
+    inicio = min_indices[ciclo_num - 1]
+    fin = min_indices[ciclo_num]
+    datos_ciclo = df_pasada.iloc[inicio:fin].copy()
+
+    # Obtener picos y valles (índices locales al ciclo)
+    peaks = ciclo_info['peaks']
+    valleys = ciclo_info['valleys']
+
+    # Verificación de índices
+    ciclo_length = len(datos_ciclo)
+    if not all(0 <= p < ciclo_length for p in peaks + valleys):
+        print(f"Error: Índices fuera de rango. Longitud del ciclo: {ciclo_length}")
+        print(f"Peaks: {peaks}")
+        print(f"Valleys: {valleys}")
+        return
+
+    if len(peaks) < 2 or len(valleys) < 1:
+        print("No hay suficientes picos/valles para definir fases.")
+        return
+
+    # Calcular suma total
+    suma_total = datos_ciclo.sum(axis=1)
+
+    # Definir segmentos de fase (inclusivos)
+    segmentos = {
+        'loading_response': (0, peaks[0]),
+        'midstance': (peaks[0], valleys[0]),
+        'terminal_stance': (valleys[0], peaks[1]),
+        'pre_swing': (peaks[1], ciclo_length - 1)
+    }
+
+    # Configuración de colores
+    colores_fases = {
+        'loading_response': (1, 0.8, 0.8),  # Rojo claro
+        'midstance': (0.8, 1, 0.8),         # Verde claro
+        'terminal_stance': (0.8, 0.8, 1),    # Azul claro
+        'pre_swing': (1, 0.9, 0.8)          # Naranja claro
+    }
+    
+    colores_bordes = {
+        'loading_response': 'red',
+        'midstance': 'green',
+        'terminal_stance': 'blue',
+        'pre_swing': 'orange'
+    }
+
+    # Configuración de figura
+    plt.figure(figsize=(14, 8))
+    ax = plt.gca()
+
+    # Dibujar áreas de fase
+    for fase, (start, end) in segmentos.items():
+        ax.axvspan(start, end, 
+                  facecolor=colores_fases[fase],
+                  edgecolor=colores_bordes[fase],
+                  linestyle='--',
+                  alpha=0.3,
+                  label=f'Fase: {fase}')
+
+    # Graficar suma total
+    ax.plot(suma_total, label='Suma total', color='black', linewidth=3, zorder=5)
+
+    # Graficar eventos clave
+    ax.scatter(peaks, suma_total.iloc[peaks], color='red', s=100, zorder=10, label='Picos')
+    ax.scatter(valleys, suma_total.iloc[valleys], color='blue', s=100, zorder=10, label='Valles')
+
+    # Líneas verticales para transiciones
+    for p in peaks:
+        ax.axvline(x=p, color='red', linestyle=':', alpha=0.5)
+    for v in valleys:
+        ax.axvline(x=v, color='blue', linestyle=':', alpha=0.5)
+
+    # Configuración del gráfico
+    ax.set_xlabel('Muestras (índices relativos al ciclo)', fontsize=12)
+    ax.set_ylabel('Valor FSR', fontsize=12)
+    ax.set_title(f'Pie {"Derecho" if lado=="R" else "Izquierdo"} - Ciclo {ciclo_num}', fontsize=14)
+    
+    # Leyenda mejorada
+    handles, labels = ax.get_legend_handles_labels()
+    # Ordenar: fases primero, luego eventos
+    phase_handles = [h for h, l in zip(handles, labels) if l.startswith('Fase:')]
+    event_handles = [h for h, l in zip(handles, labels) if not l.startswith('Fase:')]
+    
+    ax.legend(phase_handles + event_handles, 
+             [l for l in labels if l.startswith('Fase:')] + [l for l in labels if not l.startswith('Fase:')],
+             bbox_to_anchor=(1.05, 1), 
+             loc='upper left')
+
+    plt.grid(True, linestyle='--', alpha=0.4)
+    plt.tight_layout()
+    plt.show()
+
+graficar_suma_por_fases_con_sensores(
+    df_sensores_list=filt_der_subset,
+    res_pasada=results_der[0],
+    min_indices=min_indices_der[0],
+    ciclo_num=4,
+    pasada_index=0,
+    lado="R"
+)
+
+graficar_suma_por_fases_con_sensores(
+    df_sensores_list=filt_izq_subset,
+    res_pasada=results_izq[0],
+    min_indices=min_indices_izq[0],
+    ciclo_num=4,
+    pasada_index=0,
+    lado="L"
+)
+
+'''
+
+
+'''
+################### ESCALADO CON FACTOR FIJO ##########################3
+def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=0, lado="R"):
+    if not res_pasada['valid']:
+        print("Pasada no válida.")
+        return
+
+    ciclo_info = next((c for c in res_pasada['details'] if c['cycle_num'] == ciclo_num and c['is_valid']), None)
+    if not ciclo_info:
+        print(f"Ciclo {ciclo_num} no válido o no encontrado.")
+        return
+
+    df_ciclo = df_sensores_list[pasada_index]
+    inicio = min_indices[ciclo_num - 1]
+    fin = min_indices[ciclo_num]
+    datos_ciclo = df_ciclo.iloc[inicio:fin].copy().reset_index(drop=True)
+
+    peaks = ciclo_info['peaks']
+    valleys = ciclo_info['valleys']
+
+    if len(peaks) < 2 or len(valleys) < 1:
+        print("No hay suficientes picos/valles para definir fases.")
+        return
+
+    p1, p2 = peaks[0], peaks[1]
+    v = valleys[0]
+
+    # Definición de segmentos por fase
     segmentos = {
         'loading_response': (0, p1),
         'midstance': (p1, v),
@@ -1022,36 +1525,64 @@ def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indic
         'pre_swing': 'orange'
     }
 
+    # Determinar sufijo según lado
+    sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
+
+    sensores_por_fase = {
+        "loading_response": [f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
+        "midstance": [f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5",  f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
+        "terminal_stance": [f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5"],
+        "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4"],
+    }
+
+    curva_total_ajustada = np.zeros(len(datos_ciclo))
+
+    for fase, (start, end) in segmentos.items():
+        sensores_validos = sensores_por_fase[fase]
+        sensores_presentes = [s for s in sensores_validos if s in datos_ciclo.columns]
+        sensores_no_validos = [s for s in datos_ciclo.columns if s not in sensores_validos]
+
+        fase_df = datos_ciclo.iloc[start:end].copy()
+
+        # Suma de sensores válidos
+        suma_validos = fase_df[sensores_presentes].sum(axis=1) if sensores_presentes else 0
+
+        # Reducir el aporte de no válidos con un factor
+        factor = 0.1
+        suma_no_validos = (fase_df[sensores_no_validos] * factor).sum(axis=1) if sensores_no_validos else 0
+
+        suma_fase_ajustada = suma_validos + suma_no_validos
+        curva_total_ajustada[start:end] = suma_fase_ajustada
+
     # Plot
     plt.figure(figsize=(14, 6))
 
-    # Fases como bandas de color
     for fase, (start, end) in segmentos.items():
         plt.axvspan(start, end, color=colores_fases[fase], alpha=0.2, label=fase)
 
-    # Curva suma total
-    plt.plot(suma_ciclo, label='Suma total', color='black', linewidth=2)
+    suma_original = datos_ciclo.sum(axis=1)
+    plt.plot(curva_total_ajustada, label='Curva ajustada', color='black', linewidth=2)
+    plt.plot(suma_original, label='Curva original', color='gray', linestyle='--')
 
-    # Curvas individuales de sensores
+    # Sensores individuales
     colores_sensores = plt.cm.tab10.colors
     for i, sensor in enumerate(datos_ciclo.columns):
-        plt.plot(datos_ciclo[sensor], label=sensor, color=colores_sensores[i % len(colores_sensores)], alpha=0.8)
+        plt.plot(datos_ciclo[sensor], label=sensor, color=colores_sensores[i % len(colores_sensores)], alpha=0.5)
 
-    # Marcar eventos clave
-    plt.scatter([p1, p2], [suma_ciclo.iloc[p1], suma_ciclo.iloc[p2]], color='red', zorder=5, label='Picos')
-    plt.scatter([v], [suma_ciclo.iloc[v]], color='blue', zorder=5, label='Valle')
+    # Eventos
+    plt.scatter([p1, p2], [suma_original.iloc[p1], suma_original.iloc[p2]], color='red', zorder=5, label='Picos')
+    plt.scatter([v], [suma_original.iloc[v]], color='blue', zorder=5, label='Valle')
 
     plt.xlabel('Muestras')
     plt.ylabel('Valor FSR')
-    plt.title(f'Ciclo {ciclo_num} - Suma total y sensores individuales')
+    plt.title(f'Ciclo {ciclo_num} - Curva ajustada y sensores individuales ({lado})')
     plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
 
-
-def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_deteccion, min_indices_list, n_ciclos=3):
+def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_deteccion, min_indices_list, n_ciclos=3, lado="R"):
     """
-    Grafica la suma de sensores y sensores individuales para los primeros n ciclos válidos.
+    Grafica la suma de sensores y sensores individuales para los primeros n ciclos válidos de múltiples pasadas.
     """
     ciclos_graficados = 0
 
@@ -1068,12 +1599,13 @@ def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_detecc
                 res_pasada=res_pasada,
                 min_indices=indices,
                 ciclo_num=ciclo_info['cycle_num'],
-                pasada_index=i  # <- se pasa aquí el índice de la pasada
+                pasada_index=i,
+                lado=lado
             )
             ciclos_graficados += 1
 
 
-graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, n_ciclos=2)
-graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, n_ciclos=2)
+graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, n_ciclos=3, lado="R")
+graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, n_ciclos=3, lado="L")
 
-plt.show()
+'''

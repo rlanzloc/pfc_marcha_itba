@@ -4,7 +4,7 @@ import keyboard  # Asegúrate de que la librería keyboard está instalada
 
 # Inicializar Arduino (cambiar COM8 según lo indicado)
 try:
-    arduino_derecha = serial.Serial('COM6', 115200, timeout=1)
+    arduino_derecha = serial.Serial('COM3', 115200, timeout=1)
     arduino_derecha.flushInput()
     arduino_derecha.flushOutput()
     print("Conexión establecida con Arduino en COM8")
@@ -42,7 +42,7 @@ def leer_datos(arduino, dataframe):
 
                     # Si alcanzamos el máximo de lecturas, guardar el archivo y reiniciar
                     if contador >= MAX_LECTURAS:
-                        nombre_archivo = f"Derecha_SIN_S1_{archivo_numero}_6.csv"
+                        nombre_archivo = f"Derecha_SIN_S6_{archivo_numero}_4.csv"
                         dataframe.to_csv(nombre_archivo, index=False)
                         print(f"Datos guardados en '{nombre_archivo}'")
 
