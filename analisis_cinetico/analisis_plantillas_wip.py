@@ -15,6 +15,8 @@ from scipy.signal import find_peaks
 from scipy.stats import pearsonr
 import seaborn as sns
 from matplotlib.colors import Normalize
+import matplotlib.cm as cm
+import matplotlib.colors as mcolors
 
 plt.ioff()
 
@@ -1190,12 +1192,33 @@ graficar_suma_multiple_ciclos(sums_der_subset, results_der, min_indices_der, n_c
 plt.show()
 '''
 
-
-################### CURVA ELIMINANDO SENSORES SEGUN FASE ############################
-def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=2, lado="R"):
+def recalcular_picos_valleys(datos_ciclo):
     """
-    Grafica la suma total de sensores, la suma específica por fase y cada sensor individual para un ciclo,
-    resaltando las fases.
+    Recalcula picos y valles para un ciclo dado.
+
+    Args:
+        datos_ciclo (pd.DataFrame): Datos del ciclo (solo sensores).
+
+    Returns:
+        tuple: (picos, valles)
+    """
+    max_val = np.max(datos_ciclo)
+    min_prominence = max_val * 0.05  # 5% prominencia
+    min_height = max_val * 0.1       # 10% altura mínima
+
+    peaks, _ = find_peaks(datos_ciclo, prominence=min_prominence, height=min_height)
+    valleys, _ = find_peaks(-datos_ciclo, prominence=min_prominence)
+
+    # Solo consideramos primeros 2 picos y 1 valle para definir fases
+    if len(peaks) < 2 or len(valleys) < 1:
+        return None, None
+    return peaks[:2], valleys[:1]
+
+
+def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=2, lado="R", escala_excluidos=0.15):
+    """
+    Grafica la suma reescalada por fases con los picos y valles ajustados,
+    mostrando sensores individuales escalados y devuelve los datos reescalados.
 
     Args:
         df_sensores_list: Lista de DataFrames (uno por pasada), cada uno con columnas por sensor
@@ -1204,15 +1227,19 @@ def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indic
         ciclo_num: Número del ciclo a graficar (1-based)
         pasada_index: Índice de la pasada en df_sensores_list
         lado: "R" para pie derecho, "L" para pie izquierdo
+        escala_excluidos: Factor de escala para sensores no principales (0.05 = 5%)
+
+    Returns:
+        dict: Diccionario con los datos reescalados y las fases
     """
     if not res_pasada['valid']:
         print("Pasada no válida.")
-        return
+        return None
 
     ciclo_info = next((c for c in res_pasada['details'] if c['cycle_num'] == ciclo_num and c['is_valid']), None)
     if not ciclo_info:
         print(f"Ciclo {ciclo_num} no válido o no encontrado.")
-        return
+        return None
 
     df_ciclo = df_sensores_list[pasada_index]
     inicio = min_indices[ciclo_num - 1]
@@ -1220,23 +1247,25 @@ def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indic
     datos_ciclo = df_ciclo.iloc[inicio:fin].copy().reset_index(drop=True)
     suma_total = datos_ciclo.sum(axis=1)
 
+    # Obtener picos y valles originales
     peaks = ciclo_info['peaks']
     valleys = ciclo_info['valleys']
 
     if len(peaks) < 2 or len(valleys) < 1:
         print("No hay suficientes picos/valles para definir fases.")
-        return
+        return None
 
     p1, p2 = peaks[0], peaks[1]
     v = valleys[0]
 
+    # Definir fases con índices originales
     segmentos = {
         'loading_response': (0, p1),
-        'midstance': (p1, v),
-        'terminal_stance': (v, p2),
-        'pre_swing': (p2, len(datos_ciclo) - 1)
-    }
-    
+        'midstance': (p1, v),        # hasta justo antes del valle
+        'terminal_stance': (v, p2),     # empieza en el valle
+        'pre_swing': (p2, len(datos_ciclo)-1)
+}
+
     colores_fases = {
         'loading_response': 'red',
         'midstance': 'green',
@@ -1244,70 +1273,195 @@ def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indic
         'pre_swing': 'orange'
     }
 
-    # Determinar sufijo
+    # Determinar sufijo según lado
     sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
 
     sensores_por_fase = {
         "loading_response": [f"{sufijo}_S3", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
         "midstance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
-        "terminal_stance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5"],
-        "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S5", f"{sufijo}_S4" ],
+        "terminal_stance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
+        "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S5", f"{sufijo}_S4"],
     }
 
-    plt.figure(figsize=(14, 6))
+    # Preparar estructura para datos reescalados
+    datos_reescalados = {
+        'suma_total_original': suma_total.copy(),
+        'suma_reescalada': pd.Series(0, index=datos_ciclo.index),
+        'fases': {},
+        'picos_valores_reescalados': {'p1': None, 'p2': None},
+        'valle_valor_reescalado': None,
+        'indices_originales': {'p1': p1, 'p2': p2, 'valle': v}
+    }
 
-    # Fases como bandas de color
-    for fase, (start, end) in segmentos.items():
-        plt.axvspan(start, end, color=colores_fases[fase], alpha=0.1, label=f'Fase: {fase}')
-
-    # Suma específica por fase
+    # Paso 1: Calcular suma reescalada fase a fase con escala normal (sin ajustar aún)
+    suma_reescalada = pd.Series(np.zeros(len(datos_ciclo)), dtype=float)
+    fase_sumas = {}
     for fase, (start, end) in segmentos.items():
         sensores_fase = sensores_por_fase.get(fase, [])
-        sensores_disponibles = [s for s in sensores_fase if s in datos_ciclo.columns]
-        if not sensores_disponibles:
-            continue
-        suma_fase = datos_ciclo.loc[start:end, sensores_disponibles].sum(axis=1)
-        plt.plot(range(start, end + 1), suma_fase, label=f'Suma {fase}', color=colores_fases[fase], linewidth=2)
+        fase_data = pd.DataFrame(index=range(start, end+1))
+        for sensor in datos_ciclo.columns:
+            if sensor in sensores_fase:
+                fase_data[sensor] = datos_ciclo.loc[start:end, sensor]
+            else:
+                fase_data[sensor] = datos_ciclo.loc[start:end, sensor] * escala_excluidos
+        suma_fase = fase_data.sum(axis=1)
+        suma_reescalada.loc[start:end] = suma_fase
+        fase_sumas[fase] = suma_fase
 
-    # Curva total
-    plt.plot(suma_total, label='Suma total (todos los sensores)', color='black', linewidth=2, linestyle='--')
+        datos_reescalados['fases'][fase] = {
+            'start': start,
+            'sensores_principales': sensores_fase,
+            'sensores_escalados': [s for s in datos_ciclo.columns if s not in sensores_fase],
+            'suma_fase': suma_fase.copy(),
+            'datos_sensores': fase_data.copy()
+        }
+    
+    # Paso 2: Ajustar escala de 2da fase (midstance) para que inicie desde fin de 1ra fase
+    factor_midstance = fase_sumas['loading_response'].iloc[-1] / fase_sumas['midstance'].iloc[0]
+    datos_reescalados['fases']['midstance']['suma_fase'] *= factor_midstance
+    datos_reescalados['fases']['midstance']['datos_sensores'] *= factor_midstance
+    
+    # Paso 3: Ajustar escala de 3era fase (terminal_stance) para que inicie desde fin de 2da fase
+    factor_terminal = datos_reescalados['fases']['midstance']['suma_fase'].iloc[-1] / fase_sumas['terminal_stance'].iloc[1]
+    datos_reescalados['fases']['terminal_stance']['suma_fase'] *= factor_terminal
+    datos_reescalados['fases']['terminal_stance']['datos_sensores'] *= factor_terminal
 
-    # Curvas individuales de sensores
-    colores_sensores = plt.cm.tab10.colors
-    for i, sensor in enumerate(datos_ciclo.columns):
-        plt.plot(datos_ciclo[sensor], label=sensor, color=colores_sensores[i % len(colores_sensores)], alpha=0.5)
+    # Paso 4: Ajustar escala de 4ta fase (pre_swing) para que inicie desde fin de la 3era fase (terminal_stance)
+    factor_pre_swing = datos_reescalados['fases']['terminal_stance']['suma_fase'].iloc[-1] / fase_sumas['pre_swing'].iloc[1]
+    datos_reescalados['fases']['pre_swing']['suma_fase'] *= factor_pre_swing
+    datos_reescalados['fases']['pre_swing']['datos_sensores'] *= factor_pre_swing
+ 
+    # Reconstruir suma_reescalada continua corregida
+    suma_reescalada_corregida = pd.Series(0, index=datos_ciclo.index, dtype=float)
+    for fase, (start, end) in segmentos.items():
+        suma_reescalada_corregida.loc[start:end] = datos_reescalados['fases'][fase]['suma_fase']
+        
+    # Paso 5: Recalcular picos y valles sobre suma corregida para definir fases reales
+    picos_recalc, valles_recalc = recalcular_picos_valleys(suma_reescalada_corregida)
 
-    # Eventos clave
-    plt.scatter([p1, p2], [suma_total.iloc[p1], suma_total.iloc[p2]], color='red', zorder=5, label='Picos')
-    plt.scatter([v], [suma_total.iloc[v]], color='blue', zorder=5, label='Valle')
+    if picos_recalc is None or valles_recalc is None:
+        # Si no se pudo recalcular, mantenemos originales
+        picos_recalc = [p1, p2]
+        valles_recalc = [v]
 
-    plt.xlabel('Muestras')
-    plt.ylabel('Valor FSR')
-    plt.title(f'{sufijo} - Pasada {pasada_index+1} - Ciclo {ciclo_num} - Suma por fases, total e individuales')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
-    plt.grid(True, linestyle='--', alpha=0.6)
+    p1_recalc, p2_recalc = picos_recalc[0], picos_recalc[1]
+    v_recalc = valles_recalc[0]
+
+    # Recalcular segmentos con los nuevos picos y valles
+    segmentos = {
+        'loading_response': (0, p1_recalc),
+        'midstance': (p1_recalc, v_recalc),      # Excluyendo p1 y v
+        'terminal_stance': (v_recalc, p2_recalc),         # Incluyendo v y p2
+        'pre_swing': (p2_recalc, len(datos_ciclo) - 1)  # Excluyendo p2
+    }
+    
+    for fase, (start, end) in segmentos.items():
+        sensores_fase = datos_reescalados['fases'][fase]['sensores_principales']
+        fase_data = pd.DataFrame(index=range(start, end + 1))
+        for sensor in datos_ciclo.columns:
+            if sensor in sensores_fase:
+                fase_data[sensor] = datos_ciclo.loc[start:end, sensor]
+            else:
+                fase_data[sensor] = datos_ciclo.loc[start:end, sensor] * escala_excluidos
+        datos_reescalados['fases'][fase]['start'] = start
+        datos_reescalados['fases'][fase]['datos_sensores'] = fase_data.copy()
+
+        
+    sensores_unicos = list(datos_ciclo.columns)
+
+    # Mapa de colores fijo
+    colormap = cm.get_cmap('tab10', len(sensores_unicos))  # o usa 'Set1', 'tab20', etc.
+    colores_sensores = {sensor: colormap(i) for i, sensor in enumerate(sensores_unicos)}
+
+    # Graficar todo
+    plt.figure(figsize=(14, 7))
+
+    # Colorear bandas de fase según nuevos segmentos
+    for fase, (start, end) in segmentos.items():
+        plt.axvspan(datos_ciclo.index[start], datos_ciclo.index[end], alpha=0.2, color=colores_fases[fase], label=fase)
+
+    # Graficar suma corregida
+    plt.plot(suma_total.index, suma_total.values, '--', label="Suma original")
+    plt.plot(suma_reescalada_corregida.index, suma_reescalada_corregida.values, 'k-', label="Suma reescalada")
+
+    # Usar el índice real del ciclo
+    index_ciclo = datos_ciclo.index
+
+    # Set para no repetir etiquetas
+    labels_agregados = set()
+
+    # Graficar sensores individuales reescalados
+    for fase, info_fase in datos_reescalados['fases'].items():
+        start = info_fase['start']
+        y_vals_df = info_fase['datos_sensores']
+
+        # Index real que corresponde a los datos de sensores
+        x_vals = index_ciclo[start : start + len(y_vals_df)]
+
+        '''# Debug prints para verificar coherencia
+        print(f"\n[{fase.upper()}] start={start}")
+        print("→ len(y_vals_df):", len(y_vals_df))
+        print("→ index_ciclo range:", list(index_ciclo[start : start + len(y_vals_df)]))
+        print("→ index_ciclo full:", list(index_ciclo))'''
+
+        for sensor in y_vals_df.columns:
+            y_vals = y_vals_df[sensor].values
+            if len(x_vals) != len(y_vals):
+                print(f"⚠️ Mismatch en sensor {sensor} ({fase}): len(x)={len(x_vals)} vs len(y)={len(y_vals)}")
+
+            if sensor not in labels_agregados:
+                plt.plot(x_vals, y_vals, color=colores_sensores[sensor], alpha=0.6, label=sensor)
+                labels_agregados.add(sensor)
+            else:
+                plt.plot(x_vals, y_vals, color=colores_sensores[sensor], alpha=0.6)
+
+    # Ahora la leyenda será única sin hacer deduplicación post-hoc
+    plt.legend()
+
+    # Marcar picos y valles sobre la suma
+    plt.plot(datos_ciclo.index[p1_recalc], suma_reescalada_corregida.iloc[p1_recalc], 'ro')
+    plt.plot(datos_ciclo.index[p2_recalc], suma_reescalada_corregida.iloc[p2_recalc], 'ro')
+    plt.plot(datos_ciclo.index[v_recalc], suma_reescalada_corregida.iloc[v_recalc], 'bo')
+    
+    plt.plot(datos_ciclo.index[p1], suma_total.iloc[p1], 'ro')
+    plt.plot(datos_ciclo.index[p2], suma_total.iloc[p2], 'ro')
+    plt.plot(datos_ciclo.index[v], suma_total.iloc[v], 'bo')
+
+    plt.title(f"{sufijo} - Pasada {pasada_index+1} - Ciclo {ciclo_num} - Lado {lado}")
+    plt.xlabel("Índice de muestra")
+    plt.ylabel("Señal reescalada (sumatoria)")
+    plt.legend()
     plt.tight_layout()
+    plt.show()
+
+
+    # Guardar valores de picos y valle recalculados para salida
+    datos_reescalados['picos_valores_reescalados']['p1'] = suma_reescalada_corregida.iloc[p1]
+    datos_reescalados['picos_valores_reescalados']['p2'] = suma_reescalada_corregida.iloc[p2]
+    datos_reescalados['valle_valor_reescalado'] = suma_reescalada_corregida.iloc[v]
+    datos_reescalados['indices_originales'] = {'p1': p1, 'p2': p2, 'valle': v}
+    datos_reescalados['suma_reescalada'] = suma_reescalada_corregida
+
+    return datos_reescalados
+
 
 def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_deteccion, min_indices_list, 
                                               max_pasadas=None, max_ciclos_por_pasada=None, 
-                                              max_ciclos_totales=None, lado="R"):
+                                              max_ciclos_totales=None, lado="R", escala_excluidos=0.15):
     """
-    Grafica la suma de sensores y sensores individuales para todos los ciclos válidos de múltiples pasadas,
-    con opciones para limitar la cantidad mostrada.
-    
+    Grafica múltiples ciclos con datos reescalados y devuelve todos los datos procesados.
+
     Args:
-        sums_data_list: Lista de DataFrames con datos de sensores por pasada
-        resultados_deteccion: Lista de resultados de detección por pasada
-        min_indices_list: Lista de índices de ciclos por pasada
-        max_pasadas: Máximo número de pasadas a graficar (None para todas)
-        max_ciclos_por_pasada: Máximo ciclos a graficar por pasada (None para todos)
-        max_ciclos_totales: Máximo total de ciclos a graficar (None para todos)
-        lado: "R" para pie derecho, "L" para pie izquierdo
+        ... (parámetros anteriores)
+        escala_excluidos: Factor de escala para sensores no principales
+    
+    Returns:
+        list: Lista de diccionarios con datos reescalados por ciclo
     """
     ciclos_graficados = 0
+    todos_datos_reescalados = []
 
     for pasada_index, (df_sensores, res_pasada, indices) in enumerate(zip(sums_data_list, resultados_deteccion, min_indices_list)):
-        # Verificar límite de pasadas
         if max_pasadas is not None and pasada_index >= max_pasadas:
             break
             
@@ -1317,27 +1471,31 @@ def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_detecc
         ciclos_en_pasada = 0
         
         for ciclo_info in res_pasada['details']:
-            # Verificar límites de ciclos
             if (not ciclo_info['is_valid'] or 
                 (max_ciclos_por_pasada is not None and ciclos_en_pasada >= max_ciclos_por_pasada) or
                 (max_ciclos_totales is not None and ciclos_graficados >= max_ciclos_totales)):
                 continue
 
-            graficar_suma_por_fases_con_sensores(
+            datos_reescalados = graficar_suma_por_fases_con_sensores(
                 df_sensores_list=sums_data_list,
                 res_pasada=res_pasada,
                 min_indices=indices,
                 ciclo_num=ciclo_info['cycle_num'],
                 pasada_index=pasada_index,
-                lado=lado
+                lado=lado,
+                escala_excluidos=escala_excluidos
             )
             
-            ciclos_graficados += 1
-            ciclos_en_pasada += 1
+            if datos_reescalados is not None:
+                todos_datos_reescalados.append(datos_reescalados)
+                ciclos_graficados += 1
+                ciclos_en_pasada += 1
+
+    return todos_datos_reescalados
 
 
-graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, lado="R")
-graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, lado="L")
+graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, lado="R", escala_excluidos=0.15)
+graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, lado="L", escala_excluidos=0.15)
 plt.show()
 
 
