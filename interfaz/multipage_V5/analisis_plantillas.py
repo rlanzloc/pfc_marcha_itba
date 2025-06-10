@@ -16,19 +16,49 @@ from scipy.stats import pearsonr
 from scipy.interpolate import interp1d
 
 
-def procesar_archivo_csv_plantillas(folder_path):
-    # Función para detectar el delimitador
-    def detect_delimiter(file_path, sample_size=5):
-        delimiters = [',', ';', '\t']
-        with open(file_path, 'r') as f:
-            sample = [f.readline() for _ in range(sample_size)]
-        
-        for delimiter in delimiters:
-            counts = [line.count(delimiter) for line in sample]
-            if all(count == counts[0] for count in counts) and counts[0] > 0:
-                return delimiter
-        return ','  # Por defecto si no se detecta
+def procesar_archivo_plantillas(df_der, df_izq):
+    # Obtener la ruta del directorio actual
+    base_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'calibracion_individual\\')
+    
+    # Lista de sensores y pies (ajusta esto según tus datos)
+    sensor_pie_list = [
+        'Derecha_S1', 'Derecha_S2', 'Derecha_S3', 'Derecha_S4', 
+        'Derecha_S5', 'Derecha_S6', 'Derecha_S7', 'Derecha_S8',
+        'Izquierda_S1', 'Izquierda_S2', 'Izquierda_S3', 'Izquierda_S4', 
+        'Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7', 'Izquierda_S8'
+    ]
 
+    # Diccionarios para almacenar los datos
+    xx_data = {}  # Almacenará los valores de x para cada sensor
+    yy_data = {}  # Almacenará los valores de y para cada sensor
+
+    # Leer los archivos CSV para cada sensor
+    for sensor_pie in sensor_pie_list:
+        # Construir las rutas de los archivos
+        x_path = f"{base_dir}x_{sensor_pie}_SIN.csv"
+        y_path = f"{base_dir}y_{sensor_pie}_SIN.csv"
+
+        # Leer los archivos CSV
+        xx_data[sensor_pie] = pd.read_csv(x_path, header=None).values.flatten()
+        yy_data[sensor_pie] = pd.read_csv(y_path, header=None).values.flatten()
+    
+        # Listar y leer archivos
+    raw_izq = []
+    raw_der = []
+
+    if df_izq is not None:
+        df_izq_proc = df_izq.copy()
+        df_izq_proc = df_izq_proc.drop(columns=["Hora"], errors="ignore")  # Elimina "Hora" si existe
+        # Aquí puedes añadir más procesamiento si necesitas
+        raw_izq.append(df_izq_proc)
+    
+    if df_der is not None:
+        df_der_proc = df_der.copy()
+        df_der_proc = df_der_proc.drop(columns=["Hora"], errors="ignore")
+        # Aquí puedes añadir más procesamiento si necesitas
+        raw_der.append(df_der_proc)
+ 
+ 
     def limpiar_valores_anomalos(df_list, valor_maximo=1023):
         """
         Limpia valores mayores al valor máximo permitido en las columnas distintas de 'Tiempo'
@@ -47,7 +77,7 @@ def procesar_archivo_csv_plantillas(folder_path):
             dfs_limpios.append(df_copy)
 
         return dfs_limpios
-    
+           
     def interp(df_list, frecuencia_hz=100):
         """
         Recorre una lista de DataFrames, chequea si los intervalos de tiempo son consistentes con la frecuencia deseada
@@ -112,14 +142,20 @@ def procesar_archivo_csv_plantillas(folder_path):
         return dfs_interpolados
 
     def preproc_df(dataframes):
-          # Iterar sobre cada DataFrame en la lista
+        # Iterar sobre cada DataFrame en la lista
         for df in dataframes:
             # Crear una copia del DataFrame para no modificar el original
             # Normalizar el primer valor de Tiempo a 0
             # Restar el primer valor para que el primer tiempo sea 0
             df['Tiempo'] = (df['Tiempo'] - df['Tiempo'].iloc[0])/1000
         
+        processed_dataframes = []
         mV_dataframes = []
+        
+        # Crear diccionarios de calibración para cada sensor
+        calibration_dicts = {}
+        for sensor_pie in xx_data.keys():
+            calibration_dicts[sensor_pie] = dict(zip(xx_data[sensor_pie], yy_data[sensor_pie]))
 
         for df in dataframes:
             df_copy = df.copy()
@@ -129,53 +165,37 @@ def procesar_archivo_csv_plantillas(folder_path):
             def correct_out_of_range(series):
                 return series.where((series >= 0) & (series <= 1023), None).interpolate(limit_direction='both')
 
-            df_copy = df_copy.apply(correct_out_of_range)
+            df_processed = df_copy.apply(correct_out_of_range)
 
             # Convertir a mV correctamente
-            df_mV = df_copy.map(lambda x: 1 if (x == 0 or pd.isnull(x)) else int((x / 1023) * 5000))
+            df_mV = df_copy.map(lambda x: int((x / 1023) * 5000) if pd.notnull(x) else 0)
             mV_dataframes.append(df_mV)
+            
+            df_processed = df_mV.copy()
+            
+            # Procesar columnas según el sensor
+            for column in df_processed.columns:
+                if column in calibration_dicts:
+                    df_processed[column] = df_processed[column].map(lambda x: calibration_dicts[column].get(x, 0))
+            
+            processed_dataframes.append(df_processed)
 
-        return mV_dataframes
-    
-    def subset(dfs, t_inicio, t_fin):
-        """
-        Filtra los DataFrames de sums según un rango de tiempo.
-        
-        Parámetros:
-        - sums: Lista de DataFrames o un solo DataFrame.
-        - t_inicio: Valor mínimo de tiempo para el filtro.
-        - t_fin: Valor máximo de tiempo para el filtro.
-        
-        Retorna:
-        - sums_filtrado: Lista de DataFrames filtrados o un solo DataFrame filtrado.
-        """
-        # Verifica si sums es una lista de DataFrames o un solo DataFrame
-        if isinstance(dfs, list):
-            # Si es una lista, aplica el filtrado a cada DataFrame en la lista
-            sums_subset = [df[(df.index >= t_inicio) & (df.index <= t_fin)] for df in dfs]
-        else:
-            # Si es un solo DataFrame, aplica el filtrado directamente
-            sums_subset = dfs[(dfs.index >= t_inicio) & (dfs.index <= t_fin)]
-        
-        return sums_subset
-    
-    # Listar y leer archivos
-    dfs = []
-    archivos_csv = [f for f in os.listdir(folder_path) if f.endswith(".csv")]
+        return processed_dataframes, mV_dataframes
 
-    for f in archivos_csv:
-        file_path = os.path.join(folder_path, f)
-        delimiter = detect_delimiter(file_path)
-        df = pd.read_csv(file_path, delimiter=delimiter)
-        df = df.drop(columns=["Hora"], errors="ignore")
-        dfs.append(df)
+    # Función para aplicar un filtro pasa bajos
+    def apply_lowpass_filter(data, cutoff_freq, sampling_rate):
+        # Definir el filtro pasa bajos
+        nyquist = 0.5 * sampling_rate
+        normal_cutoff = cutoff_freq / nyquist
+        b, a = butter(N=4, Wn=normal_cutoff, btype='low', analog=False)
 
-    # Lista de nombres de archivos sin la extensión
-    variables = [os.path.splitext(f)[0] for f in archivos_csv]
+        # Aplicar el filtro
+        filtered_data = filtfilt(b, a, data)
 
-    # Filtrar los DataFrames en listas separadas
-    raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
-    raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
+        # Establecer un umbral mínimo para evitar valores negativos
+        filtered_data = np.maximum(filtered_data, 0)  # Asegura que los valores no sean negativos
+
+        return filtered_data
     
     # Aplicar las funciones a los DataFrames de las listas raw_der y raw_izq
     raw_der_proc = limpiar_valores_anomalos(raw_der)
@@ -185,19 +205,116 @@ def procesar_archivo_csv_plantillas(folder_path):
     raw_der_final = interp(raw_der_proc, frecuencia_hz=100)
     raw_izq_final = interp(raw_izq_proc, frecuencia_hz=100)
 
-    mV_der = preproc_df(raw_der_final)  
-    mV_izq = preproc_df(raw_izq_final)
-    
-    for i, (der, izq) in enumerate(zip(mV_der, mV_izq)):
-        tf_der = der.index[-1]  # Último tiempo de sum_der
-        tf_izq = izq.index[-1]  # Último tiempo de sum_izq
-        
-        dif = tf_der - tf_izq  # Diferencia entre los últimos tiempos
-        der.index = der.index - dif  # Ajusta los índices de sum_der
-        ti = izq.index[0]  # Primer tiempo de sum_izq
-        
-        # Aplica subset y actualiza las listas originales
-        mV_der[i] = subset(der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
-        mV_izq[i] = subset(izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq
+    dataframes_der, mV_der = preproc_df(raw_der_final)
+    dataframes_izq, mV_izq = preproc_df(raw_izq_final)
 
-    return mV_der, mV_izq, raw_der_final, raw_izq_final
+    sampling_rate = 100  # Frecuencia de muestreo en Hz
+    cutoff_frequency = 20  # Frecuencia de corte del filtro pasa bajos en Hz
+
+    lowpass_der = []
+    lowpass_izq = []
+
+    # Aplicar filtro a los DataFrames de la derecha
+    for i, df in enumerate(dataframes_der):
+        df_filtered = df.copy()  # Crear una copia del DataFrame para almacenar los datos filtrados
+
+        # Aplicar el filtro a cada columna de sensores
+        for column in df.columns:
+            df_filtered[column] = apply_lowpass_filter(df[column], cutoff_frequency, sampling_rate)
+
+        lowpass_der.append(df_filtered)
+
+    # Aplicar filtro a los DataFrames de la izquierda
+    for i, df in enumerate(dataframes_izq):
+        df_filtered = df.copy()  # Crear una copia del DataFrame para almacenar los datos filtrados
+
+        # Aplicar el filtro a cada columna de sensores
+        for column in df.columns:
+            df_filtered[column] = apply_lowpass_filter(df[column], cutoff_frequency, sampling_rate)
+
+        lowpass_izq.append(df_filtered)
+
+    # Parámetros del filtro Savitzky-Golay
+    window_length = 11  # Tamaño de la ventana del filtro (debe ser un número impar)
+    polyorder = 3       # Orden del polinomio usado en el filtro
+
+    filt_der = []
+    filt_izq = []
+
+    for i, df in enumerate(dataframes_der):
+        df_filtered = df.copy()  # Crear una copia del DataFrame para almacenar los datos filtrados
+
+        # Aplicar el filtro a cada columna de sensores
+        for column in df.columns:
+            df_filtered[column] = savgol_filter(df_filtered[column], window_length=window_length, polyorder=polyorder)
+            # Asegurarse de que no haya valores negativos
+            df_filtered[column] = np.maximum(df_filtered[column], 0)  # Corregir a 0 cualquier valor negativo
+
+        filt_der.append(df_filtered)
+
+    for i, df in enumerate(dataframes_izq):
+        df_filtered = df.copy()  # Crear una copia del DataFrame para almacenar los datos filtrados
+
+        # Aplicar el filtro a cada columna de sensores
+        for column in df.columns:
+            df_filtered[column] = savgol_filter(df_filtered[column], window_length=window_length, polyorder=polyorder)
+            # Asegurarse de que no haya valores negativos
+            df_filtered[column] = np.maximum(df_filtered[column], 0)  # Corregir a 0 cualquier valor negativo
+
+        filt_izq.append(df_filtered)
+
+    # Lista para almacenar las sumas de cada DataFrame
+    sums_der = []
+    sums_izq = []
+
+    # Iterar sobre los DataFrames en la lista filt_der
+    for filtered_df in filt_der:
+        # Sumar todas las columnas filtradas
+        sum_der = filtered_df.sum(axis=1)  # Suma a lo largo de las columnas (eje=1)
+
+        # Agregar el array resultante a la lista sumas_der
+        sums_der.append(sum_der)
+
+    # Iterar sobre los DataFrames en la lista filt_der
+    for filtered_df in filt_izq:
+        # Sumar todas las columnas filtradas
+        sum_izq = filtered_df.sum(axis=1)  # Suma a lo largo de las columnas (eje=1)
+
+        # Agregar el array resultante a la lista sumas_der
+        sums_izq.append(sum_izq)
+        
+    sums_der = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_der]
+    sums_izq = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_izq]
+    
+    
+    ########CORRECCION DE DESFASAJE ENTRE PIES#############
+    def subset(sums, t_inicio, t_fin):
+        # Verifica si sums es una lista de DataFrames o un solo DataFrame
+        if isinstance(sums, list):
+            # Si es una lista, aplica el filtrado a cada DataFrame en la lista
+            sums_subset = [df[(df.index >= t_inicio) & (df.index <= t_fin)] for df in sums]
+            sums_subset = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_subset]
+        else:
+            # Si es un solo DataFrame, aplica el filtrado directamente
+            sums_subset = sums[(sums.index >= t_inicio) & (sums.index <= t_fin)]
+        return sums_subset
+
+    for i, (sum_der, sum_izq, filt_d, filt_i) in enumerate(zip(sums_der, sums_izq, filt_der, filt_izq)):
+        tf_der = sum_der.index[-1]
+        tf_izq = sum_izq.index[-1]
+        
+        dif = tf_der - tf_izq
+        sum_der = sum_der.copy()
+        filt_d = filt_d.copy()
+        sum_der.index = sum_der.index - dif
+        filt_d.index = filt_d.index - dif
+
+        ti = sum_izq.index[0]
+        
+        # Filtrar tanto suma como datos crudos
+        sums_der[i] = subset(sum_der, ti, tf_izq)
+        sums_izq[i] = subset(sum_izq, ti, tf_izq)
+        filt_der[i] = subset(filt_d, ti, tf_izq)  
+        filt_izq[i] = subset(filt_i, ti, tf_izq)
+
+    return filt_der, filt_izq

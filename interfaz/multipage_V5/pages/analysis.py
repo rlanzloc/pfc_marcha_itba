@@ -11,7 +11,7 @@ import os
 import numpy as np
 
 
-dash.register_page(__name__, path="/analysis", name="Análisis de Marcha", icon="file-earmark-text")
+dash.register_page(__name__, path="/analysis", name="Análisis Cinemático", icon="file-earmark-text")
 #dash.register_page(__name__, path="/analysis", name="Análisis de Marcha")
 
 # Rangos de los ejes Y para cada articulación
@@ -25,10 +25,10 @@ layout = dbc.Container([
     dcc.Store(id='stored-data'),
     dcc.Store(id='session-stored-data', storage_type='session'), 
     dbc.Row([
-        dbc.Col(html.H1("Análisis de Marcha", className="text-center mb-4", style={
+        dbc.Col(html.H1("Análisis Cinemático", className="text-center mb-4", style={
             'color': '#2c3e50',
             'fontWeight': '600',
-            'marginTop': '20px'
+            'marginTop': '10px'
         }))
     ]),
     dbc.Row([
@@ -79,7 +79,7 @@ def show_hide_tabs(stored_data):
     
     tabs = dcc.Tabs(id='tabs', value='tab-1', children=[
         dcc.Tab(
-            label='Análisis Cinemático',
+            label='Ángulos Articulares',
             value='tab-1',
             style={
                 'borderTop': '1px solid #d6d6d6',
