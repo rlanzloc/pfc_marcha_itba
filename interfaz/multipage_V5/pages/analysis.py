@@ -654,16 +654,22 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
         '#4285F4': 'rgba(66, 133, 244, 0.2)'
     }
 
+    # Diccionario de títulos personalizados
+    SUBTITULOS_EJES = {
+        "pelvis / pie": ["<b>Oblicuidad Pélvica</b>", "<b>Rotación Pélvica</b>", "<b>Progresión del Pie</b>"],
+        "default": ["<b>Ángulos de Z</b>", "<b>Ángulos de Y</b>", "<b>Ángulos de X</b>"]
+    }
+
+    # Obtener títulos según la articulacións
+    titulos = SUBTITULOS_EJES.get(articulacion.lower(), SUBTITULOS_EJES["default"])
+
     fig = make_subplots(
         rows=1, cols=3,
-        subplot_titles=(
-            f"<b>Ángulos de Z</b>",
-            f"<b>Ángulos de Y</b>",
-            f"<b>Ángulos de X</b>"
-        ),
+        subplot_titles=titulos,
         shared_yaxes=False,
         horizontal_spacing=0.08
     )
+
 
     # Procesar cada lado según la selección
     sides_to_plot = []
@@ -680,10 +686,17 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
     for side, curva in sides_to_plot:
         color = colors[side]
         label = labels[side]
+        # Manejar curvas según el tipo de articulación
+        if articulacion.lower() in ["pelvis / pie", "pelvis", "pelvis/pie"]:
+            Z_curves = np.array(curva["Pelvic_Obliquity"].tolist())
+            Y_curves = np.array(curva["Pelvic_Rotation"].tolist())
+            X_curves = np.array(curva["Foot_Progression"].tolist())
+        else:
+            Z_curves = np.array(curva["Z"].tolist())
+            Y_curves = np.array(curva["Y"].tolist())
+            X_curves = np.array(curva["X"].tolist())
+
         
-        Z_curves = np.array(curva["Z"].tolist())
-        Y_curves = np.array(curva["Y"].tolist())
-        X_curves = np.array(curva["X"].tolist())
 
         average_Z = np.mean(Z_curves, axis=0)
         std_Z = np.std(Z_curves, axis=0)
@@ -795,8 +808,12 @@ def update_output(contents, filename):
             'rodilla_izquierda': [],
             'cadera_derecha': [],
             'cadera_izquierda': [],
+            'pelvis_derecha': [],  
+            'pelvis_izquierda': [],  
             'parametros_espaciotemporales': {}
         }
+
+
 
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -805,8 +822,8 @@ def update_output(contents, filename):
                 temp_file.write(decoded)
                 temp_filepath = temp_file.name
 
-            curvas_tobillo_derecho, curvas_tobillo_izquierdo, curvas_rodilla_derecha, curvas_rodilla_izquierda, curvas_cadera_derecha, curvas_cadera_izquierda, parametros_espaciotemporales = procesar_archivo_c3d(temp_filepath)
-
+            
+            curvas_tobillo_derecho, curvas_tobillo_izquierdo, curvas_rodilla_derecha, curvas_rodilla_izquierda, curvas_cadera_derecha, curvas_cadera_izquierda, curvas_pelvis_derecha, curvas_pelvis_izquierda, parametros_espaciotemporales = procesar_archivo_c3d(temp_filepath)
             os.remove(temp_filepath)
 
             results['tobillo_derecho'].extend(curvas_tobillo_derecho.to_dict('records'))
@@ -815,7 +832,10 @@ def update_output(contents, filename):
             results['rodilla_izquierda'].extend(curvas_rodilla_izquierda.to_dict('records'))
             results['cadera_derecha'].extend(curvas_cadera_derecha.to_dict('records'))
             results['cadera_izquierda'].extend(curvas_cadera_izquierda.to_dict('records'))
+            results['pelvis_derecha'].extend(curvas_pelvis_derecha.to_dict('records'))  
+            results['pelvis_izquierda'].extend(curvas_pelvis_izquierda.to_dict('records'))  
             results['parametros_espaciotemporales'] = parametros_espaciotemporales
+
             
             alerta = dbc.Alert(
                 f"Archivo {filename} cargado correctamente",
@@ -874,6 +894,9 @@ def update_graphs(lado, stored_data):
     curvas_rodilla_izquierda = pd.DataFrame(stored_data['rodilla_izquierda']) if stored_data.get('rodilla_izquierda') else None
     curvas_cadera_derecha = pd.DataFrame(stored_data['cadera_derecha']) if stored_data.get('cadera_derecha') else None
     curvas_cadera_izquierda = pd.DataFrame(stored_data['cadera_izquierda']) if stored_data.get('cadera_izquierda') else None
+    curvas_pelvis_derecha = pd.DataFrame(stored_data['pelvis_derecha']) if stored_data.get('pelvis_derecha') else None
+    curvas_pelvis_izquierda = pd.DataFrame(stored_data['pelvis_izquierda']) if stored_data.get('pelvis_izquierda') else None
+
 
     graphs = []
 
@@ -907,5 +930,31 @@ def update_graphs(lado, stored_data):
         )
         
         graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))
+
+    # Pelvis / Pie
+
+    rangos_pelvis = {
+        "Z": (-20, 20),   # Oblicuidad Pélvica
+        "Y": (-30, 30),   # Rotación Pélvica
+        "X": (-30, 30)    # Progresión del Pie
+    }
+
+    
+  
+
+
+    fig_pelvis = final_plot_plotly(
+        curvas_pelvis_derecha,
+        curvas_pelvis_izquierda,
+        posibilidad=lado,
+        rango_z=rangos_pelvis["Z"],
+        rango_y=rangos_pelvis["Y"],
+        rango_x=rangos_pelvis["X"],
+        articulacion="Pelvis / Pie"
+    )
+
+    graphs.append(dbc.Col(dcc.Graph(figure=fig_pelvis), width=12))
+  
+
 
     return graphs if graphs else dbc.Alert("No hay datos disponibles para la selección actual", color="warning")
