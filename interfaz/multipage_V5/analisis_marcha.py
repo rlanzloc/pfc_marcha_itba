@@ -469,6 +469,7 @@ def procesar_archivo_c3d( filename ):
 
             # ---- Foot Progression (ángulo pie vs dirección de marcha en plano XZ) ----
             foot_vector = LToeIn[start:end, [0, 2]] - LHeel[start:end, [0, 2]]
+            
             if dir_z < 0:
                 ang_rad = np.arctan2(foot_vector[:, 1], foot_vector[:, 0])  # X contra Z
             else:
@@ -618,11 +619,11 @@ def procesar_archivo_c3d( filename ):
     Y_tibia_left = IC_left - IM_left
     X_tibia_left = perp_torsional_left
 
-    frames.data["Tibia_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left, z=Z_tibia_left, xz= X_tibia_left)
+    frames.data["Tibia_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left, z=Z_tibia_left, xz= -X_tibia_left)
 
     origen_tibia_left_knee = IC_left
 
-    frames.data["TibiaRodilla_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left_knee, z=Z_tibia_left, xz= X_tibia_left)
+    frames.data["TibiaRodilla_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left_knee, z=Z_tibia_left, xz= -X_tibia_left)
 
     """## Tobillo"""
 
@@ -642,7 +643,7 @@ def procesar_archivo_c3d( filename ):
     X_tobillo_left = perp_frontal_left
     X_tobillo1_left =  markers.data["Rashel:LToeIn"] - markers.data["Rashel:LHeel"]
 
-    frames.data["Calcaneus_Left"] = ktk.geometry.create_frames(origin=origen_tobillo_left, x=X_tobillo1_left, xy=Y_tobillo_left)
+    frames.data["Calcaneus_Left"] = ktk.geometry.create_frames(origin=origen_tobillo_left, x=-X_tobillo1_left, xy=Y_tobillo_left)
 
     """## Femur"""
 
@@ -729,12 +730,12 @@ def procesar_archivo_c3d( filename ):
     Y_femur_left = origen_hip_left - mid_FE_left
     YZ_femur_left =  markers.data["Rashel:LKneeIn"] - markers.data["Rashel:LKneeOut"]
 
-    frames.data["FemurRodilla_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=Y_femur_left, yz=YZ_femur_left)
+    frames.data["FemurRodilla_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=-Y_femur_left, yz=YZ_femur_left)
 
     origen_femur_left = origen_hip_left
 
 
-    frames.data["Femur_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=Y_femur_left, yz=YZ_femur_left)
+    frames.data["Femur_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=-Y_femur_left, yz=YZ_femur_left)
 
     """## Cadera"""
 
@@ -748,7 +749,7 @@ def procesar_archivo_c3d( filename ):
     Z_hip_left = ASIS_der- ASIS_izq
     XZ_hip_left = mid_ASIS- mid_PSIS
 
-    frames.data["Hip_Left"] = ktk.geometry.create_frames(origin=origen_hip_left, z=Z_hip_left, xz=XZ_hip_left)
+    frames.data["Hip_Left"] = ktk.geometry.create_frames(origin=origen_hip_left, z=Z_hip_left, xz=-XZ_hip_left)
 
     """## Calculamos los angulos"""
 

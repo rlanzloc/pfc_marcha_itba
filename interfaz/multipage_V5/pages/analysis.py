@@ -186,72 +186,72 @@ def update_parametros_espaciotemporales(stored_data):
 
     def crear_grafico_barras_apilado(valores, titulo, tipo, max_valor=None):
         fig = go.Figure()
-        
+
         # Colores definidos
-        color_derecho = '#FF5252'  # Rojo
-        color_derecho_claro = '#FF9999'  # Rojo claro
-        color_izquierdo = '#4285F4'  # Azul
-        color_izquierdo_claro = '#9999FF'  # Azul claro
-        
+        color_apoyo_derecho = '#FF9999'
+        color_balanceo_derecho = '#FF5252'
+        color_apoyo_izquierdo = '#9999FF'
+        color_balanceo_izquierdo = '#4285F4'
+
         if tipo == "porcentaje":
-            # Valores para porcentajes
-            balanceo_derecho = valores[0]
-            apoyo_derecho = 100 - valores[0]
-            balanceo_izquierdo = valores[1]
-            apoyo_izquierdo = 100 - valores[1]
+            # valores = [apoyo_derecho %, apoyo_izquierdo %]
+            apoyo_derecho = valores[0]
+            balanceo_derecho = 100 - valores[0]
+            apoyo_izquierdo = valores[1]
+            balanceo_izquierdo = 100 - valores[1]
             unidades = "%"
         else:
-            # Valores para tiempos
+            # valores = [tiempo_apoyo_derecho, tiempo_apoyo_izquierdo, tiempo_balanceo_derecho, tiempo_balanceo_izquierdo]
             balanceo_derecho = valores[0]
-            apoyo_derecho = max_valor - valores[0]
             balanceo_izquierdo = valores[1]
-            apoyo_izquierdo = max_valor - valores[1]
+            apoyo_derecho = valores[2]
+            apoyo_izquierdo = valores[3]
             unidades = "s"
-        
+
         # Barras para el lado DERECHO
-        fig.add_trace(go.Bar(
-            x=['Derecho'],
-            y=[balanceo_derecho],
-            name='Balanceo Derecho',
-            marker_color=color_derecho,
-            text=[f"{balanceo_derecho:.1f}{unidades}"],
-            textposition='inside',
-            textfont=dict(color='white', size=12),
-            width=0.4
-        ))
         fig.add_trace(go.Bar(
             x=['Derecho'],
             y=[apoyo_derecho],
             name='Apoyo Derecho',
-            marker_color=color_derecho_claro,
-            text=[f"{apoyo_derecho:.1f}{unidades}"],
+            marker_color=color_apoyo_derecho,
+            text=[f"{apoyo_derecho:.2f}{unidades}"],
             textposition='inside',
             textfont=dict(color='white', size=12),
             width=0.4
         ))
-        
-        # Barras para el lado IZQUIERDO
         fig.add_trace(go.Bar(
-            x=['Izquierdo'],
-            y=[balanceo_izquierdo],
-            name='Balanceo Izquierdo',
-            marker_color=color_izquierdo,
-            text=[f"{balanceo_izquierdo:.1f}{unidades}"],
+            x=['Derecho'],
+            y=[balanceo_derecho],
+            name='Balanceo Derecho',
+            marker_color=color_balanceo_derecho,
+            text=[f"{balanceo_derecho:.2f}{unidades}"],
             textposition='inside',
             textfont=dict(color='white', size=12),
             width=0.4
         ))
+
+        # Barras para el lado IZQUIERDO
         fig.add_trace(go.Bar(
             x=['Izquierdo'],
             y=[apoyo_izquierdo],
             name='Apoyo Izquierdo',
-            marker_color=color_izquierdo_claro,
-            text=[f"{apoyo_izquierdo:.1f}{unidades}"],
+            marker_color=color_apoyo_izquierdo,
+            text=[f"{apoyo_izquierdo:.2f}{unidades}"],
             textposition='inside',
             textfont=dict(color='white', size=12),
             width=0.4
         ))
-        
+        fig.add_trace(go.Bar(
+            x=['Izquierdo'],
+            y=[balanceo_izquierdo],
+            name='Balanceo Izquierdo',
+            marker_color=color_balanceo_izquierdo,
+            text=[f"{balanceo_izquierdo:.2f}{unidades}"],
+            textposition='inside',
+            textfont=dict(color='white', size=12),
+            width=0.4
+        ))
+
         fig.update_layout(
             title=dict(
                 text=f"<b>{titulo}</b>",
@@ -262,13 +262,13 @@ def update_parametros_espaciotemporales(stored_data):
             barmode='stack',
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=40, r=40, t=80, b=40),
+            margin=dict(l=40, r=40, t=80, b=80),
             height=350,
             showlegend=True,
             legend=dict(
                 orientation="h",
-                yanchor="bottom",
-                y=1.02,
+                yanchor="top",
+                y=-0.25,
                 xanchor="center",
                 x=0.5
             ),
@@ -284,43 +284,14 @@ def update_parametros_espaciotemporales(stored_data):
                 title="Valor"
             )
         )
-        
-         # Mapeo de títulos a imágenes
-        IMAGENES_TOOLTIP_APILADAS = {
-            "Distribución del Ciclo": "/assets/images/distribucion_ciclo.png",
-            "Tiempos del Ciclo": "/assets/images/tiempos_ciclo.png"
-        }
-        
-        imagen_path = IMAGENES_TOOLTIP_APILADAS.get(titulo, "")
-        
-        graph = dcc.Graph(
+
+        return dcc.Graph(
             figure=fig,
             style={'margin': '20px 0'},
             config={'displayModeBar': False}
         )
-        
-        if imagen_path:
-            return html.Div([
-                dbc.Tooltip(
-                    html.Img(
-                        src=imagen_path,
-                        style={
-                            'width': '300px',
-                            'borderRadius': '5px',
-                            'boxShadow': '0 4px 8px rgba(0,0,0,0.2)'
-                        }
-                    ),
-                    target=f"tooltip-{titulo.replace(' ', '-').lower()}",
-                    placement="top",
-                    style={
-                        'backgroundColor': 'transparent',
-                        'border': 'none',
-                        'maxWidth': 'none'
-                    }
-                ),
-                html.Div(graph, id=f"tooltip-{titulo.replace(' ', '-').lower()}")
-            ])
-        return graph
+
+    
     
 
     
@@ -612,11 +583,16 @@ def update_parametros_espaciotemporales(stored_data):
         
         # Gráfico de tiempos apilados
         dbc.Col(crear_grafico_barras_apilado(
-            [parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo']],
+            [
+                parametros['tiempo_apoyo_derecho'],
+                parametros['tiempo_apoyo_izquierdo'],
+                parametros['tiempo_balanceo_derecho'],
+                parametros['tiempo_balanceo_izquierdo']
+            ],
             "Tiempos del Ciclo (s)",
-            tipo="tiempo",
-            max_valor=max_duracion
+            tipo="tiempo"
         ), width=6)
+
     ])
     
 
