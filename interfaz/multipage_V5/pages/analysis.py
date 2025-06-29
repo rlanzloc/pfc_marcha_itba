@@ -186,72 +186,72 @@ def update_parametros_espaciotemporales(stored_data):
 
     def crear_grafico_barras_apilado(valores, titulo, tipo, max_valor=None):
         fig = go.Figure()
-        
+
         # Colores definidos
-        color_derecho = '#FF5252'  # Rojo
-        color_derecho_claro = '#FF9999'  # Rojo claro
-        color_izquierdo = '#4285F4'  # Azul
-        color_izquierdo_claro = '#9999FF'  # Azul claro
-        
+        color_apoyo_derecho = '#FF9999'
+        color_balanceo_derecho = '#FF5252'
+        color_apoyo_izquierdo = '#9999FF'
+        color_balanceo_izquierdo = '#4285F4'
+
         if tipo == "porcentaje":
-            # Valores para porcentajes
-            balanceo_derecho = valores[0]
-            apoyo_derecho = 100 - valores[0]
-            balanceo_izquierdo = valores[1]
-            apoyo_izquierdo = 100 - valores[1]
+            # valores = [apoyo_derecho %, apoyo_izquierdo %]
+            apoyo_derecho = valores[0]
+            balanceo_derecho = 100 - valores[0]
+            apoyo_izquierdo = valores[1]
+            balanceo_izquierdo = 100 - valores[1]
             unidades = "%"
         else:
-            # Valores para tiempos
+            # valores = [tiempo_apoyo_derecho, tiempo_apoyo_izquierdo, tiempo_balanceo_derecho, tiempo_balanceo_izquierdo]
             balanceo_derecho = valores[0]
-            apoyo_derecho = max_valor - valores[0]
             balanceo_izquierdo = valores[1]
-            apoyo_izquierdo = max_valor - valores[1]
+            apoyo_derecho = valores[2]
+            apoyo_izquierdo = valores[3]
             unidades = "s"
-        
+
         # Barras para el lado DERECHO
-        fig.add_trace(go.Bar(
-            x=['Derecho'],
-            y=[balanceo_derecho],
-            name='Balanceo Derecho',
-            marker_color=color_derecho,
-            text=[f"{balanceo_derecho:.1f}{unidades}"],
-            textposition='inside',
-            textfont=dict(color='white', size=12),
-            width=0.4
-        ))
         fig.add_trace(go.Bar(
             x=['Derecho'],
             y=[apoyo_derecho],
             name='Apoyo Derecho',
-            marker_color=color_derecho_claro,
-            text=[f"{apoyo_derecho:.1f}{unidades}"],
+            marker_color=color_apoyo_derecho,
+            text=[f"{apoyo_derecho:.2f}{unidades}"],
             textposition='inside',
             textfont=dict(color='white', size=12),
             width=0.4
         ))
-        
-        # Barras para el lado IZQUIERDO
         fig.add_trace(go.Bar(
-            x=['Izquierdo'],
-            y=[balanceo_izquierdo],
-            name='Balanceo Izquierdo',
-            marker_color=color_izquierdo,
-            text=[f"{balanceo_izquierdo:.1f}{unidades}"],
+            x=['Derecho'],
+            y=[balanceo_derecho],
+            name='Balanceo Derecho',
+            marker_color=color_balanceo_derecho,
+            text=[f"{balanceo_derecho:.2f}{unidades}"],
             textposition='inside',
             textfont=dict(color='white', size=12),
             width=0.4
         ))
+
+        # Barras para el lado IZQUIERDO
         fig.add_trace(go.Bar(
             x=['Izquierdo'],
             y=[apoyo_izquierdo],
             name='Apoyo Izquierdo',
-            marker_color=color_izquierdo_claro,
-            text=[f"{apoyo_izquierdo:.1f}{unidades}"],
+            marker_color=color_apoyo_izquierdo,
+            text=[f"{apoyo_izquierdo:.2f}{unidades}"],
             textposition='inside',
             textfont=dict(color='white', size=12),
             width=0.4
         ))
-        
+        fig.add_trace(go.Bar(
+            x=['Izquierdo'],
+            y=[balanceo_izquierdo],
+            name='Balanceo Izquierdo',
+            marker_color=color_balanceo_izquierdo,
+            text=[f"{balanceo_izquierdo:.2f}{unidades}"],
+            textposition='inside',
+            textfont=dict(color='white', size=12),
+            width=0.4
+        ))
+
         fig.update_layout(
             title=dict(
                 text=f"<b>{titulo}</b>",
@@ -262,13 +262,13 @@ def update_parametros_espaciotemporales(stored_data):
             barmode='stack',
             plot_bgcolor='rgba(0,0,0,0)',
             paper_bgcolor='rgba(0,0,0,0)',
-            margin=dict(l=40, r=40, t=80, b=40),
+            margin=dict(l=40, r=40, t=80, b=80),
             height=350,
             showlegend=True,
             legend=dict(
                 orientation="h",
-                yanchor="bottom",
-                y=1.02,
+                yanchor="top",
+                y=-0.25,
                 xanchor="center",
                 x=0.5
             ),
@@ -284,43 +284,14 @@ def update_parametros_espaciotemporales(stored_data):
                 title="Valor"
             )
         )
-        
-         # Mapeo de títulos a imágenes
-        IMAGENES_TOOLTIP_APILADAS = {
-            "Distribución del Ciclo": "/assets/images/distribucion_ciclo.png",
-            "Tiempos del Ciclo": "/assets/images/tiempos_ciclo.png"
-        }
-        
-        imagen_path = IMAGENES_TOOLTIP_APILADAS.get(titulo, "")
-        
-        graph = dcc.Graph(
+
+        return dcc.Graph(
             figure=fig,
             style={'margin': '20px 0'},
             config={'displayModeBar': False}
         )
-        
-        if imagen_path:
-            return html.Div([
-                dbc.Tooltip(
-                    html.Img(
-                        src=imagen_path,
-                        style={
-                            'width': '300px',
-                            'borderRadius': '5px',
-                            'boxShadow': '0 4px 8px rgba(0,0,0,0.2)'
-                        }
-                    ),
-                    target=f"tooltip-{titulo.replace(' ', '-').lower()}",
-                    placement="top",
-                    style={
-                        'backgroundColor': 'transparent',
-                        'border': 'none',
-                        'maxWidth': 'none'
-                    }
-                ),
-                html.Div(graph, id=f"tooltip-{titulo.replace(' ', '-').lower()}")
-            ])
-        return graph
+
+    
     
 
     
@@ -612,11 +583,16 @@ def update_parametros_espaciotemporales(stored_data):
         
         # Gráfico de tiempos apilados
         dbc.Col(crear_grafico_barras_apilado(
-            [parametros['tiempo_balanceo_derecho'], parametros['tiempo_balanceo_izquierdo']],
+            [
+                parametros['tiempo_apoyo_derecho'],
+                parametros['tiempo_apoyo_izquierdo'],
+                parametros['tiempo_balanceo_derecho'],
+                parametros['tiempo_balanceo_izquierdo']
+            ],
             "Tiempos del Ciclo (s)",
-            tipo="tiempo",
-            max_valor=max_duracion
+            tipo="tiempo"
         ), width=6)
+
     ])
     
 
@@ -654,16 +630,22 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
         '#4285F4': 'rgba(66, 133, 244, 0.2)'
     }
 
+    # Diccionario de títulos personalizados
+    SUBTITULOS_EJES = {
+        "pelvis / pie": ["<b>Oblicuidad Pélvica</b>", "<b>Rotación Pélvica</b>", "<b>Progresión del Pie</b>"],
+        "default": ["<b>Ángulos de Z</b>", "<b>Ángulos de Y</b>", "<b>Ángulos de X</b>"]
+    }
+
+    # Obtener títulos según la articulacións
+    titulos = SUBTITULOS_EJES.get(articulacion.lower(), SUBTITULOS_EJES["default"])
+
     fig = make_subplots(
         rows=1, cols=3,
-        subplot_titles=(
-            f"<b>Ángulos de Z</b>",
-            f"<b>Ángulos de Y</b>",
-            f"<b>Ángulos de X</b>"
-        ),
+        subplot_titles=titulos,
         shared_yaxes=False,
         horizontal_spacing=0.08
     )
+
 
     # Procesar cada lado según la selección
     sides_to_plot = []
@@ -680,10 +662,17 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
     for side, curva in sides_to_plot:
         color = colors[side]
         label = labels[side]
+        # Manejar curvas según el tipo de articulación
+        if articulacion.lower() in ["pelvis / pie", "pelvis", "pelvis/pie"]:
+            Z_curves = np.array(curva["Pelvic_Obliquity"].tolist())
+            Y_curves = np.array(curva["Pelvic_Rotation"].tolist())
+            X_curves = np.array(curva["Foot_Progression"].tolist())
+        else:
+            Z_curves = np.array(curva["Z"].tolist())
+            Y_curves = np.array(curva["Y"].tolist())
+            X_curves = np.array(curva["X"].tolist())
+
         
-        Z_curves = np.array(curva["Z"].tolist())
-        Y_curves = np.array(curva["Y"].tolist())
-        X_curves = np.array(curva["X"].tolist())
 
         average_Z = np.mean(Z_curves, axis=0)
         std_Z = np.std(Z_curves, axis=0)
@@ -795,8 +784,12 @@ def update_output(contents, filename):
             'rodilla_izquierda': [],
             'cadera_derecha': [],
             'cadera_izquierda': [],
+            'pelvis_derecha': [],  
+            'pelvis_izquierda': [],  
             'parametros_espaciotemporales': {}
         }
+
+
 
         content_type, content_string = contents.split(',')
         decoded = base64.b64decode(content_string)
@@ -805,8 +798,8 @@ def update_output(contents, filename):
                 temp_file.write(decoded)
                 temp_filepath = temp_file.name
 
-            curvas_tobillo_derecho, curvas_tobillo_izquierdo, curvas_rodilla_derecha, curvas_rodilla_izquierda, curvas_cadera_derecha, curvas_cadera_izquierda, parametros_espaciotemporales = procesar_archivo_c3d(temp_filepath)
-
+            
+            curvas_tobillo_derecho, curvas_tobillo_izquierdo, curvas_rodilla_derecha, curvas_rodilla_izquierda, curvas_cadera_derecha, curvas_cadera_izquierda, curvas_pelvis_derecha, curvas_pelvis_izquierda, parametros_espaciotemporales = procesar_archivo_c3d(temp_filepath)
             os.remove(temp_filepath)
 
             results['tobillo_derecho'].extend(curvas_tobillo_derecho.to_dict('records'))
@@ -815,7 +808,10 @@ def update_output(contents, filename):
             results['rodilla_izquierda'].extend(curvas_rodilla_izquierda.to_dict('records'))
             results['cadera_derecha'].extend(curvas_cadera_derecha.to_dict('records'))
             results['cadera_izquierda'].extend(curvas_cadera_izquierda.to_dict('records'))
+            results['pelvis_derecha'].extend(curvas_pelvis_derecha.to_dict('records'))  
+            results['pelvis_izquierda'].extend(curvas_pelvis_izquierda.to_dict('records'))  
             results['parametros_espaciotemporales'] = parametros_espaciotemporales
+
             
             alerta = dbc.Alert(
                 f"Archivo {filename} cargado correctamente",
@@ -874,6 +870,9 @@ def update_graphs(lado, stored_data):
     curvas_rodilla_izquierda = pd.DataFrame(stored_data['rodilla_izquierda']) if stored_data.get('rodilla_izquierda') else None
     curvas_cadera_derecha = pd.DataFrame(stored_data['cadera_derecha']) if stored_data.get('cadera_derecha') else None
     curvas_cadera_izquierda = pd.DataFrame(stored_data['cadera_izquierda']) if stored_data.get('cadera_izquierda') else None
+    curvas_pelvis_derecha = pd.DataFrame(stored_data['pelvis_derecha']) if stored_data.get('pelvis_derecha') else None
+    curvas_pelvis_izquierda = pd.DataFrame(stored_data['pelvis_izquierda']) if stored_data.get('pelvis_izquierda') else None
+
 
     graphs = []
 
@@ -907,5 +906,31 @@ def update_graphs(lado, stored_data):
         )
         
         graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))
+
+    # Pelvis / Pie
+
+    rangos_pelvis = {
+        "Z": (-20, 20),   # Oblicuidad Pélvica
+        "Y": (-30, 30),   # Rotación Pélvica
+        "X": (-30, 30)    # Progresión del Pie
+    }
+
+    
+  
+
+
+    fig_pelvis = final_plot_plotly(
+        curvas_pelvis_derecha,
+        curvas_pelvis_izquierda,
+        posibilidad=lado,
+        rango_z=rangos_pelvis["Z"],
+        rango_y=rangos_pelvis["Y"],
+        rango_x=rangos_pelvis["X"],
+        articulacion="Pelvis / Pie"
+    )
+
+    graphs.append(dbc.Col(dcc.Graph(figure=fig_pelvis), width=12))
+  
+
 
     return graphs if graphs else dbc.Alert("No hay datos disponibles para la selección actual", color="warning")

@@ -348,6 +348,166 @@ def procesar_archivo_c3d( filename ):
 
         # Devolver las curvas no excluidas y los promedios
         return curves_dict, average_Z, average_Y, average_X
+    
+    def calcular_angulo_pelvis_pie_derecho(markers, ASIS_der, ASIS_izq, RHeel, RToeIn, IC_right, filtered_indices_right):
+        """
+        Calcula pelvic obliquity, pelvic rotation y foot progression angle en base a ciclos válidos,
+        ajustando la dirección de marcha por ciclo.
+
+        Retorna:
+        - angulos_normalizados: diccionario con curvas por ciclo normalizadas
+        - señales_completas: diccionario con las señales completas (no recortadas)
+        """
+        n_frames = markers.time.shape[0]
+
+        # Inicializar arrays con NaN
+        obliquity_deg = np.full(n_frames, np.nan)
+        pelvic_rotation_deg = np.full(n_frames, np.nan)
+        foot_progression_angle_deg = np.full(n_frames, np.nan)
+
+        # Procesar cada ciclo válido
+        for start, end in filtered_indices_right:
+            # Dirección de marcha en plano XZ (usando IC o RHeel como referencia)
+            pelvis_dir = ASIS_der[start:end, [0,1, 2 ]] - ASIS_izq[start:end, [0,1, 2]]
+
+            dir_z = pelvis_dir[2][0]
+
+            # ---- Pelvic Obliquity (plano YZ) ----
+            pelvis_yz = ASIS_der[start:end, [1, 2]] - ASIS_izq[start:end, [1, 2]]
+            if dir_z > 0:
+                obliquity_rad = np.arctan2(pelvis_yz[:, 0], pelvis_yz[:, 1]) # Y contra Z
+            else:
+                obliquity_rad = np.arctan2(pelvis_yz[:, 0], -pelvis_yz[:, 1]) # Y contra Z
+                obliquity_deg[start:end] = np.rad2deg(obliquity_rad)
+
+            # ---- Pelvic Rotation (ángulo pelvis vs dirección de marcha en plano XZ) ----
+            pelvis_xz = ASIS_der[start:end, [0, 2]] - ASIS_izq[start:end, [0, 2]]
+            if dir_z > 0:
+                rotation_rad = np.arctan2(pelvis_xz[:, 0], pelvis_xz[:, 1] ) # X contra Z
+            else:
+                rotation_rad = np.arctan2(-pelvis_xz[:, 0], -pelvis_xz[:, 1] ) # X contra Z
+                pelvic_rotation_deg[start:end] = np.rad2deg(rotation_rad)
+
+            # ---- Foot Progression (ángulo pie vs dirección de marcha en plano XZ) ----
+
+            foot_vector = RToeIn[start:end, [0, 2]] - RHeel[start:end, [0, 2]]
+            if dir_z > 0:
+                ang_rad = np.arctan2(foot_vector[:, 1], foot_vector[:, 0] ) # X contra Z
+            else:
+                ang_rad = np.arctan2(-foot_vector[:, 1],-foot_vector[:, 0] ) # X contra Z
+
+            foot_progression_angle_deg[start:end] = np.rad2deg(ang_rad)
+
+        # --- Normalización por ciclo ---
+        def normalizar_por_ciclo(serie, ciclos):
+            normalizadas = []
+            for c in ciclos:
+                start, end = c
+                ciclo = serie[start:end]
+                if np.isnan(ciclo).all():
+                    continue  # Salta ciclos completamente vacíos
+                t_norm = np.linspace(0, 100, num=len(ciclo))
+                interp = np.interp(np.linspace(0, 100, 100), t_norm, ciclo)
+                normalizadas.append(interp)
+            return np.array(normalizadas)
+
+
+        angulos_normalizados = {
+            "Pelvic_Obliquity": normalizar_por_ciclo(obliquity_deg, filtered_indices_right),
+            "Pelvic_Rotation": normalizar_por_ciclo(pelvic_rotation_deg, filtered_indices_right),
+            "Foot_Progression": normalizar_por_ciclo(foot_progression_angle_deg, filtered_indices_right)
+        }
+
+        señales_completas = {
+            "Pelvic_Obliquity": obliquity_deg,
+            "Pelvic_Rotation": pelvic_rotation_deg,
+            "Foot_Progression": foot_progression_angle_deg
+        }
+
+        return angulos_normalizados, señales_completas
+
+    def calcular_angulo_pelvis_pie_izquierdo(markers, ASIS_der, ASIS_izq, LHeel, LToeIn, IC_left, filtered_indices_left):
+        """
+        Calcula pelvic obliquity, pelvic rotation y foot progression angle para el pie izquierdo,
+        ajustando la dirección de marcha por ciclo.
+
+        Retorna:
+        - angulos_normalizados: diccionario con curvas por ciclo normalizadas
+        - señales_completas: diccionario con las señales completas (no recortadas)
+        """
+        n_frames = markers.time.shape[0]
+
+        # Inicializar arrays con NaN
+        obliquity_deg = np.full(n_frames, np.nan)
+        pelvic_rotation_deg = np.full(n_frames, np.nan)
+        foot_progression_angle_deg = np.full(n_frames, np.nan)
+
+        # Procesar cada ciclo válido
+        for start, end in filtered_indices_left:
+            # Dirección de marcha en plano XZ (usando IC o LHeel como referencia)
+            pelvis_dir = ASIS_der[start:end, [0, 1, 2]] - ASIS_izq[start:end, [0, 1, 2]]
+            dir_z = pelvis_dir[2][0]
+
+            # ---- Pelvic Obliquity (plano YZ) ----
+            pelvis_yz = ASIS_der[start:end, [1, 2]] - ASIS_izq[start:end, [1, 2]]
+            if dir_z < 0:
+                
+                obliquity_rad = np.arctan2(pelvis_yz[:, 0], pelvis_yz[:, 1])  # Y contra Z
+            else:
+                obliquity_rad = np.arctan2(pelvis_yz[:, 0], -pelvis_yz[:, 1])  # Y contra Z
+            obliquity_deg[start:end] = -np.rad2deg((obliquity_rad))
+
+            
+
+            # ---- Pelvic Rotation (ángulo pelvis vs dirección de marcha en plano XZ) ----
+            pelvis_xz = ASIS_der[start:end, [0, 2]] - ASIS_izq[start:end, [0, 2]]
+            if dir_z < 0:
+                rotation_rad = np.arctan2(pelvis_xz[:, 0], pelvis_xz[:, 1])  # X contra Z
+            else:
+                rotation_rad = np.arctan2(-pelvis_xz[:, 0], -pelvis_xz[:, 1])  # X contra Z
+            pelvic_rotation_deg[start:end] = -np.rad2deg((rotation_rad))
+
+            # ---- Foot Progression (ángulo pie vs dirección de marcha en plano XZ) ----
+            foot_vector = LToeIn[start:end, [0, 2]] - LHeel[start:end, [0, 2]]
+            
+            if dir_z < 0:
+                ang_rad = np.arctan2(foot_vector[:, 1], foot_vector[:, 0])  # X contra Z
+            else:
+                ang_rad =  np.arctan2(-foot_vector[:, 1], -foot_vector[:, 0])  # X contra Z
+            foot_progression_angle_deg[start:end] =  np.rad2deg((ang_rad))
+            
+    
+
+
+        # --- Normalización por ciclo ---
+        def normalizar_por_ciclo(serie, ciclos):
+            normalizadas = []
+            for c in ciclos:
+                start, end = c
+                ciclo = serie[start:end]
+                if np.isnan(ciclo).all():
+                    continue  # Salta ciclos completamente vacíos
+                t_norm = np.linspace(0, 100, num=len(ciclo))
+                interp = np.interp(np.linspace(0, 100, 100), t_norm, ciclo)
+                normalizadas.append(interp)
+            return np.array(normalizadas)
+
+        
+
+        angulos_normalizados = {
+            "Pelvic_Obliquity": normalizar_por_ciclo(obliquity_deg, filtered_indices_left),
+            "Pelvic_Rotation": normalizar_por_ciclo(pelvic_rotation_deg, filtered_indices_left),
+            "Foot_Progression": normalizar_por_ciclo(foot_progression_angle_deg, filtered_indices_left)
+        }
+
+        señales_completas = {
+            "Pelvic_Obliquity": obliquity_deg,
+            "Pelvic_Rotation": pelvic_rotation_deg,
+            "Foot_Progression": foot_progression_angle_deg
+        }
+
+        return angulos_normalizados, señales_completas
+
 
 
 
@@ -459,11 +619,11 @@ def procesar_archivo_c3d( filename ):
     Y_tibia_left = IC_left - IM_left
     X_tibia_left = perp_torsional_left
 
-    frames.data["Tibia_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left, z=Z_tibia_left, xz= X_tibia_left)
+    frames.data["Tibia_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left, z=Z_tibia_left, xz= -X_tibia_left)
 
     origen_tibia_left_knee = IC_left
 
-    frames.data["TibiaRodilla_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left_knee, z=Z_tibia_left, xz= X_tibia_left)
+    frames.data["TibiaRodilla_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left_knee, z=Z_tibia_left, xz= -X_tibia_left)
 
     """## Tobillo"""
 
@@ -483,7 +643,7 @@ def procesar_archivo_c3d( filename ):
     X_tobillo_left = perp_frontal_left
     X_tobillo1_left =  markers.data["Rashel:LToeIn"] - markers.data["Rashel:LHeel"]
 
-    frames.data["Calcaneus_Left"] = ktk.geometry.create_frames(origin=origen_tobillo_left, x=X_tobillo1_left, xy=Y_tobillo_left)
+    frames.data["Calcaneus_Left"] = ktk.geometry.create_frames(origin=origen_tobillo_left, x=-X_tobillo1_left, xy=Y_tobillo_left)
 
     """## Femur"""
 
@@ -570,12 +730,12 @@ def procesar_archivo_c3d( filename ):
     Y_femur_left = origen_hip_left - mid_FE_left
     YZ_femur_left =  markers.data["Rashel:LKneeIn"] - markers.data["Rashel:LKneeOut"]
 
-    frames.data["FemurRodilla_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=Y_femur_left, yz=YZ_femur_left)
+    frames.data["FemurRodilla_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=-Y_femur_left, yz=YZ_femur_left)
 
     origen_femur_left = origen_hip_left
 
 
-    frames.data["Femur_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=Y_femur_left, yz=YZ_femur_left)
+    frames.data["Femur_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=-Y_femur_left, yz=YZ_femur_left)
 
     """## Cadera"""
 
@@ -589,7 +749,7 @@ def procesar_archivo_c3d( filename ):
     Z_hip_left = ASIS_der- ASIS_izq
     XZ_hip_left = mid_ASIS- mid_PSIS
 
-    frames.data["Hip_Left"] = ktk.geometry.create_frames(origin=origen_hip_left, z=Z_hip_left, xz=XZ_hip_left)
+    frames.data["Hip_Left"] = ktk.geometry.create_frames(origin=origen_hip_left, z=Z_hip_left, xz=-XZ_hip_left)
 
     """## Calculamos los angulos"""
 
@@ -646,6 +806,53 @@ def procesar_archivo_c3d( filename ):
     # Procesar todas las articulaciones
     curvas_cadera_derecha, _, _, _ = procesar_articulacion(Hip_to_femur_Right, "Cadera Derecha", (-20, 60), filtered_indices_right)
     curvas_cadera_izquierda, _, _, _ = procesar_articulacion(Hip_to_femur_Left, "Cadera Izquierda", (-20, 60), filtered_indices_left)
+
+    RHeel = markers.data["Rashel:RHeel"]
+    RToeIn = markers.data["Rashel:RToeIn"]
+    LHeel = markers.data["Rashel:LHeel"]
+    LToeIn = markers.data["Rashel:LToeIn"]
+
+    angulos_norm_der, _ = calcular_angulo_pelvis_pie_derecho(
+            markers, ASIS_der, ASIS_izq, RHeel, RToeIn, IC_right, filtered_indices_right
+        )
+    angulos_norm_izq, _ = calcular_angulo_pelvis_pie_izquierdo(
+            markers, ASIS_der, ASIS_izq, LHeel, LToeIn, IC_left, filtered_indices_left
+        )
+    
+
+    def filtrar_ciclos_validos(angulo_dict):
+        obli = angulo_dict["Pelvic_Obliquity"]
+        rot = angulo_dict["Pelvic_Rotation"]
+        foot = angulo_dict["Foot_Progression"]
+        
+        # Asegura que se mantengan solo los ciclos donde todas las curvas están bien definidas
+        ciclos_validos = [
+            (o, r, f)
+            for o, r, f in zip(obli, rot, foot)
+            if o is not None and r is not None and f is not None
+            and not np.isnan(o).all()
+            and not np.isnan(r).all()
+            and not np.isnan(f).all()
+        ]
+
+        return pd.DataFrame({
+            'Pelvic_Obliquity': [c[0] for c in ciclos_validos],
+            'Pelvic_Rotation': [c[1] for c in ciclos_validos],
+            'Foot_Progression': [c[2] for c in ciclos_validos]
+        })
+
+
+    df_pelvis_der = filtrar_ciclos_validos(angulos_norm_der)
+    df_pelvis_izq = filtrar_ciclos_validos(angulos_norm_izq)
+
+
+
+
+
+
+
+
+
 
 
     def calculate_steps_pie(segment, filtered_indices_right, filtered_indices_left, time,
@@ -893,9 +1100,12 @@ def procesar_archivo_c3d( filename ):
 
     parametros_espaciotemporales = calcular_parametros_espaciotemporales()
 
+
+
     return (
         pd.DataFrame(curvas_tobillo_derecho), pd.DataFrame(curvas_tobillo_izquierdo),
         pd.DataFrame(curvas_rodilla_derecha), pd.DataFrame(curvas_rodilla_izquierda),
         pd.DataFrame(curvas_cadera_derecha), pd.DataFrame(curvas_cadera_izquierda),
+        df_pelvis_der, df_pelvis_izq,
         parametros_espaciotemporales
     )
