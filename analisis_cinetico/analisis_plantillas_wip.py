@@ -17,11 +17,12 @@ import seaborn as sns
 from matplotlib.colors import Normalize
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
+from scipy.interpolate import interp1d
 
-plt.ioff()
+plt.ioff() #si pones solo un plt.show() al final del codigo se abren todas las imagenes juntas
 
 # Definir la ruta base
-base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv_sin/"
+base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv_sin_21_06/"
 
 # Lista de sensores y pies (ajusta esto según tus datos)
 sensor_pie_list = [
@@ -71,83 +72,81 @@ for f in archivos_csv:
     df = df.drop(columns=["Hora"], errors="ignore")
     dfs.append(df)
 
+
 # Lista de nombres de archivos sin la extensión
 variables = [os.path.splitext(f)[0] for f in archivos_csv]
-print(variables)
 
 # Filtrar los DataFrames en listas separadas
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
 raw_der = [df for name, df in zip(variables, dfs) if "derecha" in name.lower()]
 
+for df in raw_izq:
+    # Identificar los nombres exactos de las columnas a intercambiar
+    col_3 = [col for col in df.columns if col.endswith('S3')][0]
+    col_5 = [col for col in df.columns if col.endswith('S5')][0]
+    col_6 = [col for col in df.columns if col.endswith('S6')][0]
+    col_8 = [col for col in df.columns if col.endswith('S8')][0]
+
+    # Intercambiar los datos
+    df[[col_3, col_5]] = df[[col_5, col_3]]
+    df[[col_6, col_8]] = df[[col_8, col_6]]
+
+    # Reordenar columnas: Tiempo primero, luego sensores en orden S1 a S8
+    tiempo_col = [col for col in df.columns if col.lower().startswith('tiempo')][0]
+    sensores_ordenados = sorted(
+        [col for col in df.columns if col != tiempo_col],
+        key=lambda x: int(x.split('S')[-1])
+    )
+    columnas_finales = [tiempo_col] + sensores_ordenados
+    df.loc[:, :] = df[columnas_finales]
+
 # Obtener los nombres en el mismo orden que los DataFrames filtrados
 nombres_izq = [name for name in variables if "izquierda" in name.lower()]
 nombres_der = [name for name in variables if "derecha" in name.lower()]
 
-################ PROCESAMIENTO DE DATOS #######################
+################ PROCESAMIENTO BASE DE DATOS CRUDOS #######################
 
 def procesar_plantillas(datos_derecha, datos_izquierda):
     def interp(df_list, frecuencia_hz=100):
-        """
-        Recorre una lista de DataFrames, chequea si los intervalos de tiempo son consistentes con la frecuencia deseada
-        (por defecto 100 Hz) y aplica la interpolación si es necesario. Los valores de los sensores serán enteros.
-        """
-        # Lista para almacenar los DataFrames resultantes (copias)
-        dfs_interpolados = []
+        dfs_reamostrados = []
+        logs_insertados = []
+        intervalo = 1 / frecuencia_hz
 
         for df in df_list:
-            # Crear una copia del DataFrame para evitar modificar el original
             df_copy = df.copy()
+            tiempo_inicial = df_copy['Tiempo'].iloc[0]
+            tiempo_final = df_copy['Tiempo'].iloc[-1]
 
-            # Verificar la diferencia de tiempos
-            df_copy['Tiempo_diff'] = df_copy['Tiempo'].diff()
+            # Crear tiempos ideales
+            tiempos_ideales = np.arange(tiempo_inicial, tiempo_final + intervalo, intervalo)
+            df_copy = df_copy.set_index('Tiempo')
 
-            # Chequear si todos los intervalos de tiempo son consistentes con la frecuencia deseada (100 Hz)
-            intervalos_fuera_de_rango = df_copy[df_copy['Tiempo_diff']
-                                                != 1 / frecuencia_hz]
+            df_nuevo = []
+            log = []
 
-            if len(intervalos_fuera_de_rango) > 0:
-                # Si hay intervalos irregulares, aplicar interpolación
-                # Crear un rango de tiempos con la frecuencia deseada (100 Hz)
-                tiempo_inicial = df_copy['Tiempo'].iloc[0]
-                tiempo_final = df_copy['Tiempo'].iloc[-1]
+            for t in tiempos_ideales:
+                if t in df_copy.index:
+                    fila = df_copy.loc[t]
+                else:
+                    # Tomar la última fila conocida (fill forward)
+                    fila = df_copy[df_copy.index < t].iloc[-1]
+                    log.append({'TiempoInsertado': round(t, 3)})
 
-                # Crear un rango de tiempos que tiene la misma longitud que el DataFrame
-                tiempos_nuevos = np.linspace(
-                    tiempo_inicial, tiempo_final, len(df_copy))
+                fila_dict = fila.to_dict()
+                fila_dict['Tiempo'] = round(t, 3)
+                df_nuevo.append(fila_dict)
 
-                # Interpolar los valores para cada sensor
-                df_interpolado = df_copy.copy()
+            df_final = pd.DataFrame(df_nuevo)
+            # Asegurar tipos
+            for col in df_final.columns:
+                if col != 'Tiempo':
+                    df_final[col] = df_final[col].astype(int)
 
-                # Interpolación para las demás columnas
-                for columna in df_copy.columns:
-                    if columna != 'Tiempo':
-                        # Realizar la interpolación lineal de los valores
-                        df_interpolado[columna] = np.interp(
-                            tiempos_nuevos, df_copy['Tiempo'], df_copy[columna])
-                        
-                        # Rellenar los posibles NaN resultantes de la interpolación con el valor anterior
-                        df_interpolado[columna] = df_interpolado[columna].ffill()  # Rellenar hacia adelante
-                        df_interpolado[columna] = df_interpolado[columna].fillna(0)  # Si aún hay NaN, rellenar con 0
+            dfs_reamostrados.append(df_final)
+            logs_insertados.append(pd.DataFrame(log))
 
-                        # Asegurarse de que los valores sean finitos antes de convertir a enteros
-                        df_interpolado[columna] = df_interpolado[columna].apply(
-                            pd.to_numeric, errors='coerce')  # Convertir a numérico
-                        df_interpolado[columna] = df_interpolado[columna].fillna(
-                            0).astype(int)  # Convertir a enteros, rellenando NaN con 0
+        return dfs_reamostrados, logs_insertados
 
-                # Actualizar la columna de 'Tiempo' con los nuevos tiempos
-                df_interpolado['Tiempo'] = tiempos_nuevos
-
-                # Eliminar la columna 'Tiempo_diff'
-                df_interpolado.drop(columns=['Tiempo_diff'], inplace=True)
-
-                # Agregar el DataFrame interpolado a la lista
-                dfs_interpolados.append(df_interpolado)
-            else:
-                # Si no hay intervalos fuera de rango, añadir el DataFrame tal como está
-                dfs_interpolados.append(df_copy)
-
-        return dfs_interpolados
 
     def preproc_df(dataframes):
         # Iterar sobre cada DataFrame en la lista
@@ -155,7 +154,8 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
             # Crear una copia del DataFrame para no modificar el original
             # Normalizar el primer valor de Tiempo a 0
             # Restar el primer valor para que el primer tiempo sea 0
-            df['Tiempo'] = (df['Tiempo'] - df['Tiempo'].iloc[0])/1000
+            df['Tiempo'] = (df['Tiempo'] - df['Tiempo'].iloc[0])
+            
         
         processed_dataframes = []
         mV_dataframes = []
@@ -193,21 +193,31 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
     def limpiar_valores_anomalos(df_list, valor_maximo=1023):
         """
         Limpia valores mayores al valor máximo permitido en las columnas distintas de 'Tiempo'
-        para cada DataFrame en una lista.
+        para cada DataFrame en una lista. Convierte 'Tiempo' a segundos si está en milisegundos.
         """
         dfs_limpios = []
 
         for df in df_list:
-            # Filtrar las columnas que no se llaman 'Tiempo'
-            columnas_sensores = [col for col in df.columns if col != 'Tiempo']
-
-            # Sustituir valores mayores al límite por NaN solo en columnas distintas de 'Tiempo'
             df_copy = df.copy()
-            df_copy[columnas_sensores] = df_copy[columnas_sensores].where(df_copy[columnas_sensores] <= valor_maximo, np.nan)
+
+            # Asegurar que 'Tiempo' crece (no hay regresión de tiempo)
+            if (df_copy['Tiempo'].diff() < 0).any():
+                print("Advertencia: Hay regresiones en el tiempo, revisar DataFrame.")
+
+            # Si el tiempo parece estar en milisegundos, lo paso a segundos 
+            df_copy['Tiempo'] = df_copy['Tiempo'] / 1000.0
+
+            # Limpiar valores de sensores
+            columnas_sensores = [col for col in df.columns if col != 'Tiempo']
+            df_copy[columnas_sensores] = df_copy[columnas_sensores].where(
+                df_copy[columnas_sensores] <= valor_maximo, np.nan)
+            
+            df_copy[columnas_sensores] = df_copy[columnas_sensores].ffill()
 
             dfs_limpios.append(df_copy)
 
         return dfs_limpios
+
     
     # Función para aplicar un filtro pasa bajos
     def apply_lowpass_filter(data, cutoff_freq, sampling_rate):
@@ -227,13 +237,10 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
     # Aplicar las funciones a los DataFrames de las listas raw_der y raw_izq
     raw_der_proc = limpiar_valores_anomalos(raw_der)
     raw_izq_proc = limpiar_valores_anomalos(raw_izq)
-
+    
     # Aplicar las funciones a los DataFrames de las listas raw_der y raw_izq
-    raw_der_final = interp(raw_der_proc, frecuencia_hz=100)
-    raw_izq_final = interp(raw_izq_proc, frecuencia_hz=100)
-
-    names_der = ['Derecha_S1', 'Derecha_S2', 'Derecha_S3', 'Derecha_S4', 'Derecha_S5', 'Derecha_S6', 'Derecha_S7', 'Derecha_S8']
-    names_izq = ['Izquierda_S1', 'Izquierda_S2', 'Izquierda_S3', 'Izquierda_S4', 'Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7','Izquierda_S8']
+    raw_der_final, _ = interp(raw_der_proc, frecuencia_hz=100)
+    raw_izq_final, _ = interp(raw_izq_proc, frecuencia_hz=100)
 
     dataframes_der, mV_der = preproc_df(raw_der_final)  # DataFrames de la derecha
     dataframes_izq, mV_izq = preproc_df(raw_izq_final)
@@ -315,14 +322,18 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
         
     sums_der = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_der]
     sums_izq = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_izq]
-        
+    
     return filt_der, filt_izq, sums_der, sums_izq, dataframes_der, dataframes_izq, mV_der, mV_izq
+
+#FILT: 8 sensores en kg
+#SUMS: suma de sensores en kg
+#DATAFRAMES: 8 sensores en kg antes del filtrado
+#mV: 8 sensores en mV
 
 filt_der, filt_izq, sums_der, sums_izq, dataframes_der, dataframes_izq, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq)
 
- 
-######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
 
+######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
 def subset(sums, t_inicio, t_fin):
     """
     Filtra los DataFrames de sums según un rango de tiempo.
@@ -350,7 +361,9 @@ for i, (sum_der, sum_izq, filt_d, filt_i) in enumerate(zip(sums_der, sums_izq, f
     tf_der = sum_der.index[-1]
     tf_izq = sum_izq.index[-1]
     
+    
     dif = tf_der - tf_izq
+    
     sum_der = sum_der.copy()
     filt_d = filt_d.copy()
     sum_der.index = sum_der.index - dif
@@ -364,238 +377,65 @@ for i, (sum_der, sum_izq, filt_d, filt_i) in enumerate(zip(sums_der, sums_izq, f
     filt_der[i] = subset(filt_d, ti, tf_izq)  
     filt_izq[i] = subset(filt_i, ti, tf_izq)
 
+############### CÁLCULO DE MÍNIMOS DE LA SUMA PARA EXTRAER CICLOS #####################
+def correccion_baseline(filt_der, filt_izq, sums_der, sums_izq):
+    """
+    Aplica la corrección de baseline (offset) tanto a los sensores individuales como a la suma total,
+    para ambos pies. La suma se corrige directamente (no se recalcula desde sensores).
 
-def minimos(sums_der, sums_izq):
-    min_indices_der = []
-    min_indices_izq = []
-    min_tiempos_der = []
-    min_tiempos_izq = []
+    Args:
+        filt_der, filt_izq (list of pd.DataFrame): listas de DataFrames con los sensores por pie (8 columnas).
+        sums_der, sums_izq (list of pd.DataFrame): listas de DataFrames con una sola columna: suma total por pie.
 
-    # Process right foot data
-    for der in sums_der:
-        min_der = argrelextrema(der.values, np.less, order=40)[0]
-        min_tiempo_der = der.index[min_der]
-        
-        min_indices_der.append(min_der)
-        min_tiempos_der.append(min_tiempo_der)
+    Returns:
+        sensores_der_corr, sensores_izq_corr (list of pd.DataFrame): sensores corregidos.
+        suma_der_corr, suma_izq_corr (list of pd.DataFrame): suma total corregida.
+        offsets_sensores_der, offsets_sensores_izq (list of pd.Series): offsets mínimos por sensor.
+        offsets_suma_der, offsets_suma_izq (list of float): mínimos restados de la suma total.
+    """
+    def corregir_sensores(lista_df):
+        lista_corr = []
+        lista_offsets = []
+        for df in lista_df:
+            offsets = df.min()
+            df_corr = df - offsets
+            df_corr[df_corr < 0] = 0
+            lista_corr.append(df_corr)
+            lista_offsets.append(offsets)
+        return lista_corr, lista_offsets
 
-    # Process left foot data
-    for izq in sums_izq:
-        min_izq = argrelextrema(izq.values, np.less, order=40)[0]
-        min_tiempo_izq = izq.index[min_izq]
-        
-        min_indices_izq.append(min_izq)
-        min_tiempos_izq.append(min_tiempo_izq)
+    def corregir_suma(lista_df):
+        lista_corr = []
+        lista_offsets = []
+        for df in lista_df:
+            fuerza = df.iloc[:, 0]
+            offset = fuerza.min()
+            fuerza_corr = fuerza - offset
+            fuerza_corr[fuerza_corr < 0] = 0
+            df_corr = pd.DataFrame(fuerza_corr, index=df.index)
+            lista_corr.append(df_corr)
+            lista_offsets.append(offset)
+        return lista_corr, lista_offsets
 
-    return min_indices_der, min_indices_izq, min_tiempos_der, min_tiempos_izq
+    # Corregir sensores
+    sensores_der_corr, offsets_sensores_der = corregir_sensores(filt_der)
+    sensores_izq_corr, offsets_sensores_izq = corregir_sensores(filt_izq)
 
+    # Corregir suma directamente (sin recalcularla)
+    suma_der_corr, offsets_suma_der = corregir_suma(sums_der)
+    suma_izq_corr, offsets_suma_izq = corregir_suma(sums_izq)
 
-def subset_time(sum_der, sum_izq, t_inicio, t_fin):
-    sum_der_subset = subset(sum_der, t_inicio, t_fin)
-    sum_izq_subset = subset(sum_izq, t_inicio, t_fin)
+    return (sensores_der_corr, sensores_izq_corr,
+            suma_der_corr, suma_izq_corr,
+            offsets_sensores_der, offsets_sensores_izq,
+            offsets_suma_der, offsets_suma_izq)
     
-    return sum_der_subset, sum_izq_subset
-    
-sums_der_subset = []
-sums_izq_subset = []
 
-sum_der_subset, sum_izq_subset = subset_time(sums_der[0], sums_izq[0], 18, 28)
-sums_der_subset.append(sum_der_subset)
-sums_izq_subset.append(sum_izq_subset)
+(filt_der, filt_izq, sums_der, sums_izq, offsets_sens_der, offsets_sens_izq, offsets_sum_der, offsets_sum_izq) = correccion_baseline(filt_der, filt_izq, sums_der, sums_izq)
+ 
 
-
-sum_der_subset, sum_izq_subset = subset_time(sums_der[1], sums_izq[1], 10, 20)
-sums_der_subset.append(sum_der_subset)
-sums_izq_subset.append(sum_izq_subset)
-
-'''
-sum_der_subset, sum_izq_subset = subset_time(sums_der[2], sums_izq[2], 15, 25)
-sums_der_subset.append(sum_der_subset)
-sums_izq_subset.append(sum_izq_subset)
-'''
-
-filt_der_subset = []
-filt_izq_subset = []
-
-filt_der_sub, filt_izq_sub = subset_time(filt_der[0], filt_izq[0], 18, 28)
-filt_der_subset.append(filt_der_sub)
-filt_izq_subset.append(filt_izq_sub)
-
-
-filt_der_sub, filt_izq_sub = subset_time(filt_der[1], filt_izq[1], 10, 20)
-filt_der_subset.append(filt_der_sub)
-filt_izq_subset.append(filt_izq_sub)
-
-'''
-filt_der_sub, filt_izq_sub = subset_time(filt_der[2], filt_izq[2], 15, 20)
-filt_der_subset.append(filt_der_sub)
-filt_izq_subset.append(filt_izq_sub)
-'''
-
-sensor_der_CF = [df[["Derecha_S5"]] for df in filt_der_subset if "Derecha_S5" in df.columns]
-sensor_izq_CF = [df[["Izquierda_S5"]] for df in filt_izq_subset if "Izquierda_S5" in df.columns]
-
-
-# lista_dfs es tu lista original de DataFrames (con estructura correcta)
-sensor_der_diff = []
-for df in sensor_der_CF:
-    tiempo = df.index.values          # Extrae el tiempo del índice
-    señal = df["Derecha_S5"].values   # Extrae los valores del sensor
-    
-    # Calcula la derivada (usa np.gradient para datos no uniformes)
-    derivada = np.gradient(señal, tiempo)
-    
-    # Crea un DataFrame con la derivada (mismo índice que el original)
-    df_derivada = pd.DataFrame(
-        derivada, 
-        index=df.index, 
-        columns=["Derecha_S5"]
-    )
-    sensor_der_diff.append(df_derivada)
-
-
-# lista_dfs es tu lista original de DataFrames (con estructura correcta)
-sensor_izq_diff = []
-for df in sensor_izq_CF:
-    tiempo = df.index.values          # Extrae el tiempo del índice
-    señal = df["Izquierda_S5"].values   # Extrae los valores del sensor
-    
-    # Calcula la derivada (usa np.gradient para datos no uniformes)
-    derivada = np.gradient(señal, tiempo)
-    
-    # Crea un DataFrame con la derivada (mismo índice que el original)
-    df_derivada = pd.DataFrame(
-        derivada, 
-        index=df.index, 
-        columns=["Izquierda_S5"]
-    )
-    sensor_izq_diff.append(df_derivada)
-
-
-n_pasadas = len(sensor_der_CF)  # Número de subplots necesarios
-
-# Crear figura con subplots (1 columna, n_pasadas filas)
-fig, axes = plt.subplots(n_pasadas, 1, figsize=(10, 5 * n_pasadas), squeeze=False)
-axes = axes.flatten()  # Para simplificar el acceso si hay solo 1 subplot
-
-for i, (df_original, df_derivada) in enumerate(zip(sensor_der_CF, sensor_der_diff)):
-    ax = axes[i]
-    
-    # Graficar señal original
-    ax.plot(df_original.index, df_original["Derecha_S5"], 
-            color='blue', label='Señal original')
-    
-    # Graficar derivada (en el mismo eje o en uno secundario)
-    ax_derivada = ax.twinx()  # Eje Y secundario
-    ax_derivada.plot(df_derivada.index, df_derivada["Derecha_S5"], 
-                     color='red', linestyle='--', label='Derivada')
-    
-    # Ajustes de estilo
-    ax.set_title(f"Pasada {i+1}")
-    ax.set_xlabel("Tiempo")
-    ax.set_ylabel("Señal original (azul)", color='blue')
-    ax_derivada.set_ylabel("Derivada (rojo)", color='red')
-    
-    # Mostrar leyendas
-    ax.legend(loc='upper left')
-    ax_derivada.legend(loc='upper right')
-
-plt.tight_layout()  # Evita solapamiento
-
-
-n_pasadas = len(sensor_izq_CF)  # Número de subplots necesarios
-
-# Crear figura con subplots (1 columna, n_pasadas filas)
-fig, axes = plt.subplots(n_pasadas, 1, figsize=(10, 5 * n_pasadas), squeeze=False)
-axes = axes.flatten()  # Para simplificar el acceso si hay solo 1 subplot
-
-for i, (df_original, df_derivada) in enumerate(zip(sensor_izq_CF, sensor_izq_diff)):
-    ax = axes[i]
-    
-    # Graficar señal original
-    ax.plot(df_original.index, df_original["Izquierda_S5"], 
-            color='blue', label='Señal original')
-    
-    # Graficar derivada (en el mismo eje o en uno secundario)
-    ax_derivada = ax.twinx()  # Eje Y secundario
-    ax_derivada.plot(df_derivada.index, df_derivada["Izquierda_S5"], 
-                     color='red', linestyle='--', label='Derivada')
-    
-    # Ajustes de estilo
-    ax.set_title(f"Pasada {i+1}")
-    ax.set_xlabel("Tiempo")
-    ax.set_ylabel("Señal original (azul)", color='blue')
-    ax_derivada.set_ylabel("Derivada (rojo)", color='red')
-    
-    # Mostrar leyendas
-    ax.legend(loc='upper left')
-    ax_derivada.legend(loc='upper right')
-
-plt.tight_layout()  # Evita solapamiento
-plt.show()
-
-
-min_indices_der, min_indices_izq, min_tiempos_der, min_tiempos_izq = minimos(sums_der_subset, sums_izq_subset)
-
-'''
-def graficar_sensores(dataframes, lado_pie, sensores_a_graficar):
-    if len(dataframes) == 0:
-        print(f"No hay datos de PIE {lado_pie.upper()} para graficar.")
-        return None
-    
-    fig, axes = plt.subplots(len(dataframes), 1, figsize=(12, 2.5 * len(dataframes)))
-    if len(dataframes) == 1:
-        axes = [axes]
-    
-    for i, df in enumerate(dataframes):
-        cols = [col for col in sensores_a_graficar if col in df.columns]
-        df[cols].plot( ax=axes[i])
-        axes[i].set_title(f'Pie {lado_pie.upper()} - Pasada {i+2}', pad=10)
-    
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)
-    return fig
-
-# Define qué sensores quieres graficar
-sensores_der = ['Derecha_S5','Derecha_S6', 'Derecha_S7', 'Derecha_S8']
-sensores_izq = ['Izquierda_S5', 'Izquierda_S6', 'Izquierda_S7', 'Izquierda_S8']
-
-# Grafica
-fig_der = graficar_sensores(filt_der_subset, "derecho", sensores_der)
-fig_izq = graficar_sensores(filt_izq_subset, "izquierdo", sensores_izq)
-
-# Lista para almacenar las sumas de los sensores HS (6,7,8)
-sums_der_por_region = []
-sums_izq_por_region = []
-
-# Iterar sobre los DataFrames en filt_der_subset (Pie derecho)
-for filtered_df in filt_der_subset:
-    # Seleccionar solo las columnas de los sensores 6, 7, 8
-    hs_sensors = filtered_df[sensores_der]  # Ajusta los nombres si son diferentes
-    
-    # Sumar las columnas (a lo largo de las filas, axis=1)
-    sum_der = hs_sensors.sum(axis=1)
-    
-    # Agregar el resultado a la lista (convertir a DataFrame si es necesario)
-    sums_der_por_region.append(sum_der.to_frame() if not isinstance(sum_der, pd.DataFrame) else sum_der)
-
-# Iterar sobre los DataFrames en filt_izq_subset (Pie izquierdo)
-for filtered_df in filt_izq_subset:
-    # Seleccionar solo las columnas de los sensores 6, 7, 8
-    hs_sensors = filtered_df[sensores_izq]  # Ajusta los nombres si son diferentes
-    
-    # Sumar las columnas (a lo largo de las filas, axis=1)
-    sum_izq = hs_sensors.sum(axis=1)
-    
-    # Agregar el resultado a la lista (convertir a DataFrame si es necesario)
-    sums_izq_por_region.append(sum_izq.to_frame() if not isinstance(sum_izq, pd.DataFrame) else sum_izq)
-'''
-# ==================================================
-# GRÁFICOS 
-# ==================================================
-
+'''# GRÁFICOS FILT (kg)
 # Pie DERECHO 
-
 der = filt_der
 if len(der) == 0:
     print("No hay datos de PIE DERECHO para graficar.")
@@ -607,7 +447,7 @@ else:
     for i, df in enumerate(der):
         cols = [col for col in df.columns if col != 'Tiempo']
         df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie DERECHO - Pasada {i+2}', pad=10)
+        axes[i].set_title(f'Pie DERECHO - Pasada {i+1}', pad=10)
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
@@ -624,1146 +464,1139 @@ else:
     for i, df in enumerate(izq):
         cols = [col for col in df.columns if col != 'Tiempo']
         df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie IZQUIERDO - Pasada {i+2}', pad=10)
+        axes[i].set_title(f'Pie IZQUIERDO - Pasada {i+1}', pad=10)
     
     plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)
+    plt.subplots_adjust(hspace=0.4)'''
 
-plt.show()
 
-def plot_signal_comparison(data_left, data_right, 
-                          left_name="Izquierda", right_name="Derecha",
-                          signal_name="fuerzas (N)", 
-                          x_label='Tiempo', y_label='Valores',
-                          left_color='b', right_color='r'):
+def segmentar_ciclos_vgrf(series_list, frecuencia_hz=100, subida_minima=3, post_min_muestras=10, threshold_ratio=0.05):
     """
-    Función para comparar señales entre pie izquierdo y derecho
-    
-    Parámetros:
-    -----------
-    data_left: lista de DataFrames con datos del pie izquierdo
-    data_right: lista de DataFrames con datos del pie derecho
-    left_name: nombre para la leyenda del pie izquierdo
-    right_name: nombre para la leyenda del pie derecho
-    signal_name: descripción de la señal que se está graficando
-    x_label: etiqueta para el eje X
-    y_label: etiqueta para el eje Y
-    left_color: color para el pie izquierdo
-    right_color: color para el pie derecho
+    Detección de mínimos válidos (contacto inicial) y segmentación de ciclos de marcha,
+    combinando cambio de pendiente (derivada) + validación de subida posterior,
+    y barrido de rescate para zonas sin mínimos claros.
     """
-    
-    # Definir cantidad de pasadas
-    num_pasadas = max(len(data_right), len(data_left))
+    min_indices_all = []
+    min_tiempos_all = []
+    ciclos_apoyo_all = []
+    indices_apoyo_all = []
+    ciclos_completos_all = []
 
-    # Evitar error si no hay datos
-    if num_pasadas == 0:
-        print("No hay datos para graficar.")
-        return
+    for serie in series_list:
+        y = serie.values.ravel()
+        tiempos = np.array(serie.index)
 
-    # Crear figura y subplots
-    fig, axes = plt.subplots(nrows=num_pasadas, ncols=1, 
-                           figsize=(10, num_pasadas * 3), 
-                           squeeze=False)
-    axes = axes.flatten()
+        dy = np.diff(y, prepend=y[0])
 
-    # Iterar sobre las pasadas
-    for i in range(num_pasadas):
-        if i < len(data_right):
-            data_right[i].plot(ax=axes[i], label=right_name, color=right_color)
+        min_indices = []
+        min_separacion = int(0.7 * frecuencia_hz)  # separación mínima entre mínimos principales
 
-        if i < len(data_left):
-            data_left[i].plot(ax=axes[i], label=left_name, color=left_color)
+        peso_maximo = 5
 
-        axes[i].set_title(f'Suma de {signal_name} - Pasada N°{i+2}')
-        axes[i].set_xlabel(x_label)
-        axes[i].set_ylabel(y_label)
-        axes[i].legend()
+        candidatos = []
 
-    plt.tight_layout()
-    plt.show()
-    
-plot_signal_comparison(sums_izq_subset, sums_der_subset)
+        for idx in range(post_min_muestras, len(y)):
+            if dy[idx - 1] < 0 and dy[idx] >= 0:
+                ventana_post = y[idx + 1: idx + 1 + post_min_muestras]
+                subida = ventana_post.max() - y[idx]
+
+                if subida >= subida_minima:
+                    ventana_post = int(0.2 * frecuencia_hz)
+                    fin = min(len(y), idx + ventana_post)
+                    ventana_posterior = y[idx:fin]
+                    if len(ventana_posterior) == 0:
+                        continue
+
+                    idx_local_min = np.argmin(ventana_posterior)
+                    idx_minimo_real = idx + idx_local_min
+
+                    if y[idx_minimo_real] < peso_maximo:
+                        candidatos.append(idx_minimo_real)
+
+        # Filtrar por separación mínima entre principales
+        candidatos = sorted(set(candidatos))
+        for idx_minimo_real in candidatos:
+            if len(min_indices) == 0 or (idx_minimo_real - min_indices[-1]) >= min_separacion:
+                min_indices.append(idx_minimo_real)
 
 
-def extraer_ciclos(series_list, min_indices_list):
-    """
-    Extrae ciclos de marcha entre mínimos consecutivos de una lista de señales.
+        ### --- BARRIDO DE RESCATE: robusto con derivada local en todos los gaps ---
 
-    Parámetros:
-    - series_list: lista de pd.Series (una por pasada), ej: sums_der o sums_izq
-    - min_indices_list: lista de arrays de índices de mínimos, misma longitud que series_list
+        rescates = []
+        umbral_gap = int(1.7 * frecuencia_hz)
+        margen_gap = int(0.05 * frecuencia_hz)
+        umbral_cercania = int(0.4 * frecuencia_hz)
+        ventana = int(0.4 * frecuencia_hz)
+        peso_maximo = 5
 
-    Retorna:
-    - ciclos_por_pasada: lista de listas de pd.Series, cada uno representa un ciclo
-    """
-    ciclos_por_pasada = []
+        # --- GAP INICIAL ---
+        if len(min_indices) > 0 and min_indices[0] > umbral_gap:
+            ini = 0
+            fin = min_indices[0] - margen_gap
+            if fin > ini:
+                print(f"[DEBUG] Revisando GAP INICIAL: ini={tiempos[ini]:.3f}, fin={tiempos[fin]:.3f}")
+                dy_gap = np.diff(y[ini:fin], prepend=y[ini])
+                for j in range(1, len(dy_gap)):
+                    if dy_gap[j - 1] < 0 and dy_gap[j] >= 0:
+                        idx_local = ini + j
+                        fin_ventana = min(len(y), idx_local + ventana)
+                        subida = y[fin_ventana:fin_ventana + post_min_muestras].max() - y[idx_local]
+                        if y[idx_local] < peso_maximo:
+                            if subida >= subida_minima:
+                                too_close = any(abs(idx_local - idx_existente) < umbral_cercania for idx_existente in min_indices + rescates)
+                                if not too_close:
+                                    rescates.append(idx_local)
+                                    print(f"[DEBUG - INICIAL] AGREGADO idx={idx_local} valor={y[idx_local]:.2f} subida={subida:.2f}")
+                                else:
+                                    print(f"[DEBUG - INICIAL] IGNORADO idx={idx_local} por cercanía")
+                            else:
+                                print(f"[DEBUG - INICIAL] NO guardado idx={idx_local} subida={subida:.2f} < {subida_minima}")
+                        else:
+                            print(f"[DEBUG - INICIAL] DESCARTADO idx={idx_local} valor={y[idx_local]:.2f} > peso_maximo")
 
-    for serie, min_indices in zip(series_list, min_indices_list):
-        ciclos = []
+        # --- GAPS INTERMEDIOS ---
         for i in range(len(min_indices) - 1):
-            idx_inicio = min_indices[i]
+            gap = min_indices[i + 1] - min_indices[i]
+            if gap > umbral_gap:
+                ini = min_indices[i] + margen_gap
+                fin = min_indices[i + 1] - margen_gap
+                if fin > ini:
+                    print(f"[DEBUG] Revisando GAP INTERMEDIO: ini={tiempos[ini]:.3f}, fin={tiempos[fin]:.3f}")
+                    dy_gap = np.diff(y[ini:fin], prepend=y[ini])
+                    for j in range(1, len(dy_gap)):
+                        if dy_gap[j - 1] < 0 and dy_gap[j] >= 0:
+                            idx_local = ini + j
+                            fin_ventana = min(len(y), idx_local + ventana)
+                            subida = y[fin_ventana:fin_ventana + post_min_muestras].max() - y[idx_local]
+                            if y[idx_local] < peso_maximo:
+                                if subida >= subida_minima:
+                                    too_close = any(abs(idx_local - idx_existente) < umbral_cercania for idx_existente in min_indices + rescates)
+                                    if not too_close:
+                                        rescates.append(idx_local)
+                                        print(f"[DEBUG - INTERMEDIO] AGREGADO idx={idx_local} subida={subida:.2f}")
+                                    else:
+                                        print(f"[DEBUG - INTERMEDIO] IGNORADO idx={idx_local} por cercanía")
+                                else:
+                                    print(f"[DEBUG - INTERMEDIO] NO guardado idx={idx_local} subida={subida:.2f} < {subida_minima}")
+                            else:
+                                print(f"[DEBUG - INTERMEDIO] DESCARTADO idx={idx_local} valor={y[idx_local]:.2f} > peso_maximo")
+
+        # --- GAP FINAL ---
+        if len(min_indices) > 0 and (len(y) - min_indices[-1]) > umbral_gap:
+            ini = min_indices[-1] + margen_gap
+            fin = len(y)
+            if fin > ini:
+                print(f"[DEBUG] Revisando GAP FINAL: ini={tiempos[ini]:.3f}, fin={tiempos[fin-1]:.3f}")
+                dy_gap = np.diff(y[ini:fin], prepend=y[ini])
+                for j in range(1, len(dy_gap)):
+                    if dy_gap[j - 1] < 0 and dy_gap[j] >= 0:
+                        idx_local = ini + j
+                        fin_ventana = min(len(y), idx_local + ventana)
+                        fin_max = min(len(y), fin_ventana + post_min_muestras)
+                        if fin_max > fin_ventana:
+                            subida = y[fin_ventana:fin_max].max() - y[idx_local]
+                        else:
+                            subida = 0  # Si no hay ventana, la subida es cero (no cumple)
+                        if y[idx_local] < peso_maximo:
+                            if subida >= subida_minima:
+                                too_close = any(abs(idx_local - idx_existente) < umbral_cercania for idx_existente in min_indices + rescates)
+                                if not too_close:
+                                    rescates.append(idx_local)
+                                    print(f"[DEBUG - FINAL] AGREGADO idx={idx_local} subida={subida:.2f}")
+                                else:
+                                    print(f"[DEBUG - FINAL] IGNORADO idx={idx_local} por cercanía")
+                            else:
+                                print(f"[DEBUG - FINAL] NO guardado idx={idx_local} subida={subida:.2f} < {subida_minima}")
+                        else:
+                            print(f"[DEBUG - FINAL] DESCARTADO idx={idx_local} valor={y[idx_local]:.2f} > peso_maximo")
+
+        min_indices = sorted(set(min_indices))
+        min_tiempos = tiempos[min_indices]
+        min_indices_all.append(min_indices)
+        min_tiempos_all.append(min_tiempos)
+
+        ### --- Segmentar ciclos ---
+        ciclos_apoyo = []
+        indices_apoyo = []
+        ciclos_completos = []
+
+        for i in range(len(min_indices) - 1):
+            idx_ini = min_indices[i]
             idx_fin = min_indices[i + 1]
-            ciclo = serie.iloc[idx_inicio:idx_fin+1]
-            ciclos.append(ciclo)
-        ciclos_por_pasada.append(ciclos)
+            ciclo_completo = serie.iloc[idx_ini:idx_fin]
+            ciclos_completos.append(ciclo_completo)
 
-    return ciclos_por_pasada
+            datos = ciclo_completo.values.ravel()
+            max_valor = datos.max()
+            threshold = threshold_ratio * max_valor
+            indices_validos = np.where(datos > threshold)[0]
 
-ciclos_der = extraer_ciclos(sums_der_subset, min_indices_der)
-ciclos_izq = extraer_ciclos(sums_izq_subset, min_indices_izq)
+            if len(indices_validos) > 0:
+                rel_fin = indices_validos[-1]
 
-def improved_vGRF_detection(pasadas, min_indices, time_threshold=0.2, 
-                          min_prominence_factor=0.05, min_peak_height=0.1):
+                # Protege: si queda igual
+                if rel_fin == 0:
+                    rel_fin = 1
+                if rel_fin > len(ciclo_completo):
+                    rel_fin = len(ciclo_completo)
+
+                apoyo = ciclo_completo.iloc[:rel_fin]
+                if len(apoyo) == 0:
+                    apoyo = ciclo_completo
+
+                t_ini = apoyo.index[0]
+                t_fin = apoyo.index[-1]
+            else:
+                apoyo = ciclo_completo
+                t_ini = ciclo_completo.index[0]
+                t_fin = ciclo_completo.index[-1]
+
+            ciclos_apoyo.append(apoyo)
+            indices_apoyo.append((t_ini, t_fin))
+
+        ciclos_apoyo_all.append(ciclos_apoyo)
+        indices_apoyo_all.append(indices_apoyo)
+        ciclos_completos_all.append(ciclos_completos)
+
+
+    return min_indices_all, min_tiempos_all, ciclos_apoyo_all, indices_apoyo_all, ciclos_completos_all
+
+
+# Para el pie derecho
+min_indices_der, min_tiempos_der, ciclos_der, indices_apoyo_der, ciclos_completos_der = segmentar_ciclos_vgrf(sums_der)
+
+# Para el pie izquierdo
+min_indices_izq, min_tiempos_izq, ciclos_izq, indices_apoyo_izq, ciclos_completos_izq = segmentar_ciclos_vgrf(sums_izq)
+
+def segmentar_ciclos_vgrf_desde_picos(series_list,
+                                      frecuencia_hz=100,
+                                      subida_minima=3,
+                                      ventana_retroceso_s=0.4,
+                                      peso_maximo=5,
+                                      min_separacion_s=0.7,
+                                      min_prominence_factor=0.01,
+                                      min_peak_height=0.07,
+                                      threshold_ratio=0.03):
     """
-    Detección de patrones vGRF SIN validación de posición de picos
-    
+    Detección de mínimos válidos (contacto inicial) y segmentación de ciclos de marcha,
+    combinando cambio de pendiente (derivada) + validación de subida posterior,
+    y barrido de rescate para zonas sin mínimos claros.
+    """
+    min_indices_all = []
+    min_tiempos_all = []
+    ciclos_apoyo_all = []
+    indices_apoyo_all = []
+    ciclos_completos_all = []
+
+    ventana_retroceso = int(ventana_retroceso_s * frecuencia_hz)
+    min_separacion = int(min_separacion_s * frecuencia_hz)
+
+    for serie in series_list:
+        y = serie.values.ravel()
+        tiempos = np.array(serie.index)
+        dy = np.diff(y, prepend=y[0])
+
+        max_val = np.max(y)
+        min_prominence = max_val * min_prominence_factor
+        min_height = max_val * min_peak_height
+
+        peaks, props = find_peaks(y, prominence=min_prominence, height=min_height)
+        print(f"[INFO] Detectados {len(peaks)} picos.")
+
+        min_indices = []
+
+        for pico in peaks:
+            ini = max(0, pico - ventana_retroceso)
+            fin = pico
+
+            encontrado = False
+            for idx in reversed(range(ini + 1, fin)):
+                if dy[idx - 1] < 0 and dy[idx] >= 0:
+                    if y[idx] < peso_maximo:
+                        subida = y[pico] - y[idx]
+                        if subida >= subida_minima:
+                            if len(min_indices) == 0 or (idx - min_indices[-1]) >= min_separacion:
+                                min_indices.append(idx)
+                                encontrado = True
+                                tiempo_minimo = tiempos[idx]
+                                print(f"[OK] Mínimo desde pico {pico} en idx={idx}, tiempo={tiempo_minimo} subida={subida:.2f}")
+                                break
+
+            if not encontrado:
+                nueva_ventana = int(0.6 * frecuencia_hz)
+                ini_rescate = max(0, pico - nueva_ventana)
+                fin_rescate = fin
+                dy_rescate = np.diff(y[ini_rescate:fin_rescate], prepend=y[ini_rescate])
+
+                for j in reversed(range(1, len(dy_rescate))):
+                    if dy_rescate[j - 1] < 0 and dy_rescate[j] >= 0:
+                        idx_rescate = ini_rescate + j
+                        subida = y[pico] - y[idx_rescate]
+                        if y[idx_rescate] < peso_maximo and subida >= subida_minima:
+                            if len(min_indices) == 0 or (idx_rescate - min_indices[-1]) >= min_separacion:
+                                min_indices.append(idx_rescate)
+                                tiempo_rescate = tiempos[idx_rescate]
+                                print(f"[RESCATE OK] Derivada idx={idx_rescate}, tiempo={tiempo_rescate} subida={subida:.2f}")
+                                break
+
+        min_indices = sorted(set(min_indices))
+        min_tiempos = tiempos[min_indices]
+        min_indices_all.append(min_indices)
+        min_tiempos_all.append(min_tiempos)
+
+        ### --- Segmentar ciclos ---
+        ciclos_apoyo = []
+        indices_apoyo = []
+        ciclos_completos = []
+
+        for i in range(len(min_indices) - 1):
+            idx_ini = min_indices[i]
+            idx_fin = min_indices[i + 1]
+            ciclo_completo = serie.iloc[idx_ini:idx_fin]
+            ciclos_completos.append(ciclo_completo)
+
+            datos = ciclo_completo.values.ravel()
+            max_valor = datos.max()
+            threshold = threshold_ratio * max_valor
+            indices_validos = np.where(datos > threshold)[0]
+
+            if len(indices_validos) > 0:
+                rel_fin = indices_validos[-1]
+
+                # Protege: si queda igual
+                if rel_fin == 0:
+                    rel_fin = 1
+                if rel_fin > len(ciclo_completo):
+                    rel_fin = len(ciclo_completo)
+
+                apoyo = ciclo_completo.iloc[:rel_fin]
+                if len(apoyo) == 0:
+                    apoyo = ciclo_completo
+
+                t_ini = apoyo.index[0]
+                t_fin = apoyo.index[-1]
+            else:
+                apoyo = ciclo_completo
+                t_ini = ciclo_completo.index[0]
+                t_fin = ciclo_completo.index[-1]
+
+            ciclos_apoyo.append(apoyo)
+            indices_apoyo.append((t_ini, t_fin))
+
+        ciclos_apoyo_all.append(ciclos_apoyo)
+        indices_apoyo_all.append(indices_apoyo)
+        ciclos_completos_all.append(ciclos_completos)
+
+
+    return min_indices_all, min_tiempos_all, ciclos_apoyo_all, indices_apoyo_all, ciclos_completos_all
+
+
+'''min_indices_der, min_tiempos_der, ciclos_der, indices_apoyo_der, ciclos_completos_der = segmentar_ciclos_vgrf_desde_picos(sums_der)
+
+# Para el pie izquierdo
+min_indices_izq, min_tiempos_izq, ciclos_izq, indices_apoyo_izq, ciclos_completos_izq = segmentar_ciclos_vgrf_desde_picos(sums_izq)'''
+
+
+
+def segmentar_ciclos_vgrf_desde_picos(series_list,
+                                      frecuencia_hz=100,
+                                      subida_minima=3,
+                                      ventana_retroceso_s=0.4,
+                                      peso_maximo=5,
+                                      min_separacion_s=0.7,
+                                      min_prominence_factor=0.01,
+                                      min_peak_height=0.07,
+                                      threshold_ratio=0.03):
+    """
+    Detecta mínimos hacia atrás desde picos detectados internamente.
+    El rescate también usa derivada.
+    Además, mejora la detección del fin de apoyo combinando umbral y diferencia controlada con el mínimo inicial.
+    """
+    min_indices_all = []
+    min_tiempos_all = []
+    ciclos_apoyo_all = []
+    indices_apoyo_all = []
+    ciclos_completos_all = []
+
+    ventana_retroceso = int(ventana_retroceso_s * frecuencia_hz)
+    min_separacion = int(min_separacion_s * frecuencia_hz)
+
+    for serie in series_list:
+        y = serie.values.ravel()
+        tiempos = np.array(serie.index)
+        dy = np.diff(y, prepend=y[0])
+
+        max_val = np.max(y)
+        min_prominence = max_val * min_prominence_factor
+        min_height = max_val * min_peak_height
+
+        peaks, props = find_peaks(y, prominence=min_prominence, height=min_height)
+        print(f"[INFO] Detectados {len(peaks)} picos.")
+
+        min_indices = []
+
+        for pico in peaks:
+            ini = max(0, pico - ventana_retroceso)
+            fin = pico
+
+            encontrado = False
+            for idx in reversed(range(ini + 1, fin)):
+                if dy[idx - 1] < 0 and dy[idx] >= 0:
+                    if y[idx] < peso_maximo:
+                        subida = y[pico] - y[idx]
+                        if subida >= subida_minima:
+                            if len(min_indices) == 0 or (idx - min_indices[-1]) >= min_separacion:
+                                min_indices.append(idx)
+                                encontrado = True
+                                tiempo_minimo = tiempos[idx]
+                                print(f"[OK] Mínimo desde pico {pico} en idx={idx}, tiempo={tiempo_minimo} subida={subida:.2f}")
+                                break
+
+            if not encontrado:
+                nueva_ventana = int(0.7 * frecuencia_hz)
+                ini_rescate = max(0, pico - nueva_ventana)
+                fin_rescate = fin
+                dy_rescate = np.diff(y[ini_rescate:fin_rescate], prepend=y[ini_rescate])
+
+                for j in reversed(range(1, len(dy_rescate))):
+                    if dy_rescate[j - 1] < 0 and dy_rescate[j] >= 0:
+                        idx_rescate = ini_rescate + j
+                        subida = y[pico] - y[idx_rescate]
+                        if y[idx_rescate] < peso_maximo and subida >= subida_minima:
+                            if len(min_indices) == 0 or (idx_rescate - min_indices[-1]) >= min_separacion:
+                                min_indices.append(idx_rescate)
+                                tiempo_rescate = tiempos[idx_rescate]
+                                print(f"[RESCATE OK] Derivada idx={idx_rescate}, tiempo={tiempo_rescate} subida={subida:.2f}")
+                                break
+
+        min_indices = sorted(set(min_indices))
+        min_tiempos = tiempos[min_indices]
+        min_indices_all.append(min_indices)
+        min_tiempos_all.append(min_tiempos)
+
+        ciclos_apoyo = []
+        indices_apoyo = []
+        ciclos_completos = []
+
+        for i in range(len(min_indices) - 1):
+            idx_ini = min_indices[i]
+            idx_fin = min_indices[i + 1]
+
+            ciclo_completo = serie.iloc[idx_ini:idx_fin]
+            ciclos_completos.append(ciclo_completo)
+
+            datos = ciclo_completo.values.ravel()
+            # 1️⃣ Empieza desde el final del ciclo
+            ultimo_idx = len(datos) - 1
+
+            # 2️⃣ Define ventana de retroceso (p.ej. 200 ms)
+            ventana_subida = int(0.4 * frecuencia_hz)
+            inicio_busqueda = max(0, ultimo_idx - ventana_subida)
+
+            # 3️⃣ Define un umbral mínimo de pendiente (por ejemplo: +0.5 kg por muestra)
+            pendiente_min = 0.4  # Ajustable según escala
+
+            rel_fin = ultimo_idx
+            for k in reversed(range(inicio_busqueda + 1, ultimo_idx)):
+                delta = abs(datos[k] - datos[k - 1])
+                print(f'el delta para {k} es {delta}')
+                if delta > pendiente_min:
+                    rel_fin = k - 1
+                    break 
+
+            # Failsafe
+            if rel_fin <= 0:
+                rel_fin = 1
+
+            apoyo = ciclo_completo.iloc[:rel_fin]
+            if len(apoyo) == 0:
+                apoyo = ciclo_completo
+
+            t_ini = apoyo.index[0]
+            t_fin = apoyo.index[-1]
+
+            ciclos_apoyo.append(apoyo)
+            indices_apoyo.append((t_ini, t_fin))
+
+        ciclos_apoyo_all.append(ciclos_apoyo)
+        indices_apoyo_all.append(indices_apoyo)
+        ciclos_completos_all.append(ciclos_completos)
+
+    return min_indices_all, min_tiempos_all, ciclos_apoyo_all, indices_apoyo_all, ciclos_completos_all
+
+'''# Para el pie derecho
+min_indices_der, min_tiempos_der, ciclos_der, indices_apoyo_der, ciclos_completos_der = segmentar_ciclos_vgrf_desde_picos(sums_der)
+
+# Para el pie izquierdo
+min_indices_izq, min_tiempos_izq, ciclos_izq, indices_apoyo_izq, ciclos_completos_izq = segmentar_ciclos_vgrf_desde_picos(sums_izq)'''
+
+
+############## DETECCIÓN DE PICOS Y VALLES EN CADA CICLO, CLASIFICACIÓN DE VÁLIDOS/INVÁLIDOS ########################
+def improved_vGRF_detection(ciclos_por_pasada, indices_por_pasada, ciclos_completos_por_pasada,
+                                time_threshold=0.5, 
+                                min_prominence_factor=0.05,
+                                min_peak_height=0.1,
+                                support_ratio_threshold=(0.6, 0.8)):
+    """
+    Detección de patrones vGRF usando ciclos ya recortados, con evaluación de proporción de fase de apoyo.
+
     Args:
-        pasadas: Lista de DataFrames con señales
-        min_indices: Índices de mínimos
-        time_threshold: Máxima variación permitida en duración (20%)
-        min_prominence_factor: % de la amplitud para detección de picos (10%)
-        min_peak_height: Altura mínima relativa para picos (25% del máximo)
-    
+        ciclos_por_pasada: Lista de listas de pd.Series, una por ciclo ya recortado
+        indices_por_pasada: Lista de (inicio, fin) en tiempo real de cada ciclo
+        ciclos_completos_por_pasada: Lista de listas de pd.Series con los ciclos sin recorte
+        time_threshold: Tolerancia de duración respecto a la mediana (20%)
+        min_prominence_factor: % de la amplitud para prominencia mínima
+        min_peak_height: Altura mínima relativa del pico
+        support_ratio_threshold: Tuple con mínimo y máximo aceptables de proporción de fase de apoyo
+
     Returns:
-        dict: Resultados por pasada con detalles de exclusión
+        Lista de resultados por pasada, con ciclos válidos/invalidos y diagnóstico.
     """
-    results = []
-    
-    for i, (df, mins) in enumerate(zip(pasadas, min_indices)):
-        if len(mins) < 2:
-            results.append({"valid": [], "invalid": [], "details": []})
+    resultados = []
+
+    for ciclos, indices_ciclos, completos in zip(ciclos_por_pasada, indices_por_pasada, ciclos_completos_por_pasada):
+        if len(ciclos) < 2:
+            resultados.append({"valid": [], "invalid": [], "details": []})
             continue
-            
-        # 1. Análisis de duración
-        durations = np.diff(df.index[mins])
-        median_dur = np.median(durations)
-        valid_time = (durations > (1-time_threshold)*median_dur) & \
-                    (durations < (1+time_threshold)*median_dur)
+
+        tiempos_inicio_apoyo = [i[0] for i in indices_ciclos if i[0] is not None]
+        tiempos_fin_apoyo = [i[1] for i in indices_ciclos if i[1] is not None]
+        duraciones = [fin - ini for ini, fin in zip(tiempos_inicio_apoyo, tiempos_fin_apoyo)]
         
-        # 2. Detección de patrones (sin validación de posición)
-        cycle_results = []
-        valid_cycles = []
-        
-        for j in range(len(mins)-1):
-            cycle_data = df.iloc[mins[j]:mins[j+1]]
-            y = cycle_data.values.flatten()
-            
-            # Parámetros adaptativos
+        median_dur = np.median(duraciones)
+
+        ciclo_resultados = []
+        ciclos_validos = []
+
+        for j, (ciclo_apoyo, ciclo_completo, duracion) in enumerate(zip(ciclos, completos, duraciones)):
+            y = ciclo_apoyo.values.flatten()
             max_val = np.max(y)
             min_prominence = max_val * min_prominence_factor
             min_height = max_val * min_peak_height
-            
-            # Detección de características
+
             try:
                 peaks, props = find_peaks(y, prominence=min_prominence, height=min_height)
                 valleys, _ = find_peaks(-y, prominence=min_prominence)
-                
-                # Criterios de validación (simplificados)
+
+                # --- FILTRO: solo valles mayores a 30 kg ---
+                valleys_filtrados = []
+                for v in valleys:
+                    valor_valle = y[v]
+                    if valor_valle >= 30:
+                        valleys_filtrados.append(v)
+
                 is_valid = True
-                exclusion_reason = []
-                
-                if not valid_time[j]:
+                razones = []
+
+                if not ((1 - time_threshold) * median_dur < duracion < (1 + time_threshold) * median_dur):
                     is_valid = False
-                    exclusion_reason.append("Duración anómala")
-                
+                    razones.append("Duración anómala")
+
                 if len(peaks) < 2:
                     is_valid = False
-                    exclusion_reason.append(f"Solo {len(peaks)} pico(s)")
-                
-                if len(valleys) < 1:
+                    razones.append(f"Solo {len(peaks)} pico(s)")
+
+                if len(valleys_filtrados) < 1:
                     is_valid = False
-                    exclusion_reason.append("Sin valle central")
+                    razones.append("Sin valle central relevante")
+
+                if len(valleys_filtrados) > 1:
+                    is_valid = False
+                    razones.append(f"{len(valleys_filtrados)} valles detectados")
+
+                duracion_apoyo = duracion
+                duracion_completo = ciclo_completo.index[-1] - ciclo_completo.index[0]
                 
+                proporcion_apoyo = duracion_apoyo / duracion_completo if duracion_completo > 0 else 0
+                
+                if len(ciclo_apoyo) == 0 or len(ciclo_completo) == 0:
+                    # No tiene sentido calcular duración
+                    proporcion_apoyo = 0    
+
+                if not (support_ratio_threshold[0] <= proporcion_apoyo <= support_ratio_threshold[1]):
+                    is_valid = False
+                    razones.append(f"Proporción de apoyo fuera de rango ({proporcion_apoyo:.2f})")
+
             except Exception as e:
                 is_valid = False
-                exclusion_reason.append(f"Error: {str(e)}")
-            
-            # Guardar resultados
+                peaks = []
+                valleys_filtrados = []
+                razones = [f"Error: {str(e)}"]
+
             if is_valid:
-                valid_cycles.append(j+1)
-            
-            cycle_results.append({
-                "cycle_num": j+1,
+                ciclos_validos.append(j)
+
+            ciclo_resultados.append({
+                "cycle_num": j,
                 "is_valid": is_valid,
-                "peaks": peaks.tolist() if 'peaks' in locals() else [],
-                "valleys": valleys.tolist() if 'valleys' in locals() else [],
-                "exclusion_reasons": exclusion_reason,
-                "duration": durations[j]
+                "peaks": [ciclo_apoyo.index[p] for p in peaks] if len(peaks) else [],
+                "valleys": [ciclo_apoyo.index[v] for v in valleys_filtrados] if len(valleys_filtrados) else [],
+                "exclusion_reasons": razones,
+                "duration": duracion,
+                "support_ratio": proporcion_apoyo
             })
-        
-        results.append({
-            "valid": valid_cycles,
-            "invalid": [j+1 for j in range(len(mins)-1) if j+1 not in valid_cycles],
-            "details": cycle_results
+
+        resultados.append({
+            "valid": ciclos_validos,
+            "invalid": [j for j in range(len(ciclos)) if j not in ciclos_validos],
+            "details": ciclo_resultados
         })
-    
-    return results
 
-
-def plot_with_diagnosis(pasadas, results, min_indices):
-    """Visualización con información de exclusión"""
-    for i, (df, res) in enumerate(zip(pasadas, results)):
-        fig, ax = plt.subplots(figsize=(12, 4))
-        
-        col_name = df.columns[0]
-        x = df.index.to_numpy()
-        y = df[col_name].to_numpy()
-        # Señal completa
-        ax.plot(x, y, color='gray', alpha=0.5, label='Señal cruda')
-        
-        # Resaltar ciclos
-        for cycle in res['details']:
-            start = df.index[min_indices[i][cycle['cycle_num']-1]]
-            end = df.index[min_indices[i][cycle['cycle_num']]]
-            
-            color = 'green' if cycle['is_valid'] else 'red'
-            ax.axvspan(start, end, color=color, alpha=0.2)
-            
-            # Marcar picos/valles
-            if cycle['peaks']:
-                for peak in cycle['peaks']:
-                    pos = df.index[min_indices[i][cycle['cycle_num']-1] + peak]
-                    ax.scatter(pos, df.loc[pos], color='blue', marker='x', s=80)
-            
-            if cycle['valleys']:
-                for valley in cycle['valleys']:
-                    pos = df.index[min_indices[i][cycle['cycle_num']-1] + valley]
-                    ax.scatter(pos, df.loc[pos], color='purple', marker='o', s=60)
-            
-            # Texto de diagnóstico
-            if not cycle['is_valid'] and len(cycle['exclusion_reasons']) > 0:
-                mid_point = start + (end - start)/2
-                ax.text(mid_point, np.max(df.values)*0.9, 
-                       "\n".join(cycle['exclusion_reasons']),
-                       ha='center', va='top', fontsize=8)
-        
-        ax.set_title(f'Pasada {i+1} - Ciclos válidos: {len(res["valid"])}/{len(res["details"])}')
-        ax.legend()
-        plt.tight_layout()
-       
-        
-        
-# 1. Ejecutar detección
-results_der = improved_vGRF_detection(
-    sums_der_subset,
-    min_indices_der,
-    time_threshold=0.2,  # Aumentar para permitir más variación en duración
-    min_prominence_factor=0.05,  # Reducir para detectar picos menos prominentes
-    min_peak_height=0.1  # Reducir para incluir picos más pequeños
-)
-
-# 1. Ejecutar detección
-results_izq = improved_vGRF_detection(
-    sums_izq_subset,
-    min_indices_izq,
-    time_threshold=0.2,  # Aumentar para permitir más variación en duración
-    min_prominence_factor=0.05,  # Reducir para detectar picos menos prominentes
-    min_peak_height=0.1 # Reducir para incluir picos más pequeños
-)
-
-
-# 2. Visualizar con diagnóstico
-plot_with_diagnosis(sums_der_subset, results_der, min_indices_der)
-# 2. Visualizar con diagnóstico
-plot_with_diagnosis(sums_izq_subset, results_izq, min_indices_izq)
-
-
-
-def calcular_aportes_sensores(pasadas_crudas, resultados_deteccion, min_indices):
-    """
-    Calcula el aporte relativo de cada sensor para ciclos válidos detectados.
-    
-    Args:
-        pasadas_crudas: Lista de DataFrames con datos crudos de los sensores
-        resultados_deteccion: Resultado de improved_vGRF_detection()
-        min_indices: Índices de mínimos usados en la detección
-        
-    Returns:
-        dict: Diccionario estructurado con:
-            - 'por_ciclo': Lista de DataFrames con aportes por ciclo
-            - 'resumen': DataFrame con estadísticas agregadas
-            - 'sensores': Lista de nombres de sensores
-    """
-    resultados = {
-        'por_ciclo': [],
-        'resumen': None,
-        'sensores': pasadas_crudas[0].columns.tolist() if len(pasadas_crudas) > 0 else []
-    }
-    
-    datos_para_resumen = []
-
-    for i, (df_crudo, res_pasada) in enumerate(zip(pasadas_crudas, resultados_deteccion)):
-        if not res_pasada['valid']:
-            continue
-            
-        if isinstance(df_crudo.index, pd.DatetimeIndex):
-            df_crudo.index = df_crudo.index.round('1ms')  # Correcto para datetime
-        else:
-            df_crudo.index = pd.to_numeric(df_crudo.index).round(3)  # Para índices numéricos
-
-        for ciclo_num in res_pasada['valid']:
-            # Extraer datos del ciclo
-            inicio = min_indices[i][ciclo_num-1]
-            fin = min_indices[i][ciclo_num]
-            datos_ciclo = df_crudo.iloc[inicio:fin].copy()
-            
-            # Calcular aportes relativos
-            suma_total = datos_ciclo.sum(axis=1)
-            aportes = datos_ciclo.div(suma_total, axis=0).fillna(0)
-            
-            # Almacenar resultados
-            ciclo_info = {
-                'pasada': i+1,
-                'ciclo': ciclo_num,
-                'aportes': aportes,
-                'media_por_sensor': aportes.mean(),
-                'duracion': resultados_deteccion[i]['details'][ciclo_num-1]['duration']
-            }
-            
-            resultados['por_ciclo'].append(ciclo_info)
-            datos_para_resumen.append(aportes.mean())
-    
-    # Crear resumen agregado
-    if datos_para_resumen:
-        df_resumen = pd.DataFrame(datos_para_resumen)
-        resultados['resumen'] = {
-            'media': df_resumen.mean(),
-            'desviacion': df_resumen.std(),
-            'min': df_resumen.min(),
-            'max': df_resumen.max()
-        }
-    
     return resultados
 
-    
-# 1. Calcular los aportes
-aportes_der = calcular_aportes_sensores(
-    filt_der, 
-    results_der, 
-    min_indices_der
+results_der = improved_vGRF_detection(ciclos_der, indices_apoyo_der, ciclos_completos_der, 
+                                        time_threshold=0.5,  # Aumentar para permitir más variación en duración
+                                        min_prominence_factor=0.05,  # Reducir para detectar picos menos prominentes
+                                        min_peak_height=0.1, # Reducir para incluir picos más pequeños
+                                        support_ratio_threshold=(0.6, 0.77)) 
+results_izq = improved_vGRF_detection(ciclos_izq, indices_apoyo_izq, ciclos_completos_izq,
+                                        time_threshold=0.5,  
+                                        min_prominence_factor=0.05,                                          
+                                        min_peak_height=0.1,
+                                        support_ratio_threshold=(0.6, 0.77)) 
+
+
+def plot_with_diagnosis(senales_completas, results, indices_ciclos, min_tiempos=None):
+    """
+    Muestra la señal completa con sombreado en las fases de apoyo:
+    - Verde para ciclos válidos
+    - Rojo para inválidos
+    También muestra picos, valles y los mínimos globales (si se proveen).
+    """
+    for i, (df, res, recortes) in enumerate(zip(senales_completas, results, indices_ciclos)):
+        fig, ax = plt.subplots(figsize=(12, 4))
+        col_name = df.columns[0]
+        x = df.index
+        y = df[col_name]
+
+        # Señal completa
+        ax.plot(x, y, color='gray', alpha=0.8, label='vGRF')
+
+        # Sombrear fases de apoyo
+        for ciclo in res['details']:
+            num = ciclo['cycle_num']
+            if num >= len(recortes):
+                continue
+
+            inicio, fin = recortes[num]
+            if inicio is None or fin is None:
+                continue
+
+            color = 'green' if ciclo['is_valid'] else 'red'
+            recorte_x = df.loc[inicio:fin].index
+            recorte_y = df.loc[inicio:fin, col_name]
+
+            ax.fill_between(recorte_x, 0, recorte_y, color=color, alpha=0.2)
+
+            # Marcar picos y valles 
+            for peak in ciclo['peaks']:
+                ax.scatter(peak, df.loc[peak], color='blue', marker='x', s=40)
+
+            for valley in ciclo['valleys']:
+                ax.scatter(valley, df.loc[valley], color='purple', marker='o', s=40)
+
+            if not ciclo['is_valid'] and len(ciclo['exclusion_reasons']) > 0:
+                mid_point = inicio + (fin - inicio) / 2
+                ax.text(mid_point, y.max() * 0.9,
+                        "\n".join(ciclo['exclusion_reasons']),
+                        ha='center', va='top', fontsize=8)
+
+        # Agregar mínimos globales si se pasan
+        if min_tiempos is not None:
+            tiempos_minimos = min_tiempos[i]
+            for t_min in tiempos_minimos:
+                if t_min in df.index:
+                    ax.scatter(t_min, df.loc[t_min], color='orange', marker='o', s=20, label='Mínimo' if t_min == tiempos_minimos[0] else "")
+
+        ax.set_title(f'Pasada {i+1} - Ciclos válidos: {len(res["valid"])}/{len(res["details"])}')
+        ax.set_xlabel("Tiempo")
+        ax.set_ylabel("vGRF")
+        ax.legend()
+        plt.tight_layout()
+
+
+plot_with_diagnosis(sums_der, results_der, indices_apoyo_der, min_tiempos=min_tiempos_der)
+plot_with_diagnosis(sums_izq, results_izq, indices_apoyo_izq, min_tiempos=min_tiempos_izq)
+
+plt.show()
+############# GRÁFICO IZQUIERDA Y DERECHA INTERCALADOS, SE DIFERENCIA VALIDEZ DE CADA CICLO ####################
+def plot_izquierda_derecha(sums_der_subset, sums_izq_subset,
+                                        min_indices_der, min_indices_izq,
+                                        results_der, results_izq):
+    """
+    Grafica la señal completa de ambos pies coloreada por ciclo completo (apoyo + swing),
+    según validez del ciclo, y diferenciando pie por opacidad.
+    """
+    for i, (df_der, df_izq, mins_der, mins_izq, res_der, res_izq) in enumerate(
+        zip(sums_der_subset, sums_izq_subset, min_indices_der, min_indices_izq, results_der, results_izq)
+    ):
+        fig, ax = plt.subplots(figsize=(14, 5))
+        col_der = df_der.columns[0]
+        col_izq = df_izq.columns[0]
+
+        # Pie derecho
+        for j, ciclo in enumerate(res_der['details']):
+            if j + 1 >= len(mins_der):
+                continue
+            idx_inicio = df_der.index[mins_der[j]]
+            idx_fin = df_der.index[mins_der[j+1]]
+            tramo = df_der.loc[idx_inicio:idx_fin, col_der]
+            color = 'green' if ciclo['is_valid'] else 'red'
+            ax.plot(tramo.index, tramo.values, color=color, alpha=0.9, label='Derecho' if j == 0 else None)
+
+        # Pie izquierdo
+        for j, ciclo in enumerate(res_izq['details']):
+            if j + 1 >= len(mins_izq):
+                continue
+            idx_inicio = df_izq.index[mins_izq[j]]
+            idx_fin = df_izq.index[mins_izq[j+1]]
+            tramo = df_izq.loc[idx_inicio:idx_fin, col_izq]
+            color = 'green' if ciclo['is_valid'] else 'red'
+            ax.plot(tramo.index, tramo.values, color=color, alpha=0.4, label='Izquierdo' if j == 0 else None)
+
+        ax.set_title(f'Señal continua vGRF - Pie Derecho/Izquierdo - Ciclos completos coloreados')
+        ax.set_xlabel("Tiempo")
+        ax.set_ylabel("vGRF")
+        ax.legend()
+        ax.set_ylim(bottom=0)
+        plt.tight_layout()
+
+
+
+plot_izquierda_derecha(
+    sums_der,
+    sums_izq,
+    min_indices_der,
+    min_indices_izq,
+    results_der,
+    results_izq
 )
 
-aportes_izq = calcular_aportes_sensores(
-    filt_izq, 
-    results_izq, 
-    min_indices_izq
-)
 
-def calcular_aportes_por_fase(pasadas_crudas, resultados_deteccion, min_indices):
-    """
-    Calcula el aporte relativo de cada sensor por fase (HS, FF, MS, HO) en ciclos válidos.
 
-    Returns:
-        dict: Resultados por fase, por ciclo, y resumen agregado.
-    """
-    resultados = {
-        'por_ciclo': [],  # Lista de dicts con aportes por fase por ciclo
-        'resumen': {},    # Media y std por fase
-        'sensores': pasadas_crudas[0].columns.tolist() if pasadas_crudas else []
-    }
+# === Coordenadas de sensores ===
+coord_sensores = [
+    ['S1', 6.4, 182.0],
+    ['S2', 0.0, 149.3],
+    ['S3', 28.7, 154.0],
+    ['S4', 56.8, 149.5],
+    ['S5', 54.4, 93.6],
+    ['S6', 6.4, 16.0],
+    ['S7', 23.4, 0.1],
+    ['S8', 41.3, 14.6]
+]
 
-    fases = ['loading_response', 'midstance', 'terminal_stance', 'pre_swing']
-    datos_resumen = {fase: [] for fase in fases}
+coord_df = pd.DataFrame(coord_sensores, columns=["Sensor", "X", "Y"]).set_index("Sensor")
 
-    for i, (df_crudo, res_pasada) in enumerate(zip(pasadas_crudas, resultados_deteccion)):
-        if not res_pasada['valid']:
+# Reflejo en X para el pie izquierdo
+coord_df_izq = coord_df.copy()
+coord_df_izq["X"] = -coord_df_izq["X"]
+
+# Offsets para que (0,0) no quede pegado al borde
+offset_izq = abs(coord_df_izq["X"].min()) + 10
+offset_der = abs(coord_df["X"].min()) + 10
+
+coord_df_izq["X"] += offset_izq
+coord_df_der = coord_df.copy()
+coord_df_der["X"] += offset_der
+
+# === Función para calcular COP por ciclos válidos ===
+def calcular_COP_por_ciclos_validos(fuerza_df, vgrf_df, coord_df, indices_ciclos, validos, lado):
+    copx_total = []
+    copy_total = []
+
+    sufijo = 'Derecha' if lado.upper() == 'R' else 'Izquierda'
+    coord_actual = coord_df.copy()
+    coord_actual.index = [f"{sufijo}_{s}" for s in coord_actual.index]
+
+    for (ini, fin), es_valido in zip(indices_ciclos, validos):
+        if not es_valido:
             continue
 
-        for ciclo_info in res_pasada['details']:
+        ciclo_fuerza = fuerza_df[ini:fin]
+        ciclo_vgrf = vgrf_df[ini:fin]
+        
+        coordenadas = coord_actual.loc[ciclo_fuerza.columns][['X', 'Y']].to_numpy()
+        matriz_fuerza = ciclo_fuerza.to_numpy()
+        vector_vgrf = ciclo_vgrf.to_numpy().flatten()
+        vector_vgrf[vector_vgrf == 0] = np.nan
+
+        cop_x = np.sum(matriz_fuerza * coordenadas[:, 0], axis=1) / vector_vgrf
+        cop_y = np.sum(matriz_fuerza * coordenadas[:, 1], axis=1) / vector_vgrf
+
+        copx_total.append(pd.Series(cop_x).reset_index(drop=True))
+        copy_total.append(pd.Series(cop_y).reset_index(drop=True))
+
+    return copx_total, copy_total
+
+# === Calcular COP ===
+copx_izq_list, copy_izq_list = calcular_COP_por_ciclos_validos(
+    filt_izq[0], sums_izq[0], coord_df_izq,
+    indices_apoyo_izq[0], [d['is_valid'] for d in results_izq[0]['details']], lado='L'
+)
+
+copx_der_list, copy_der_list = calcular_COP_por_ciclos_validos(
+    filt_der[0], sums_der[0], coord_df_der,
+    indices_apoyo_der[0], [d['is_valid'] for d in results_der[0]['details']], lado='R'
+)
+
+'''# === Graficar ===
+fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+pies = ['Izquierdo', 'Derecho']
+copx_all = [copx_izq_list, copx_der_list]
+copy_all = [copy_izq_list, copy_der_list]
+coord_dfs = [coord_df_izq, coord_df_der]
+sensor_colores = ['blue', 'yellow', 'grey', 'pink', 'green', 'orange', 'purple', 'red']
+colores = plt.colormaps['tab10']
+margen = 20
+
+for ax, pie, copx_list, copy_list, coord_df in zip(axes, pies, copx_all, copy_all, coord_dfs):
+    x_min = coord_df['X'].min() - margen
+    x_max = coord_df['X'].max() + margen
+    y_min = coord_df['Y'].min() - margen
+    y_max = coord_df['Y'].max() + margen
+
+    # Grilla de fondo
+    ax.imshow(np.zeros((500, 500)), extent=[x_min, x_max, y_min, y_max], cmap='gray', alpha=0.05)
+
+    # Sensores
+    for i, (sensor, fila) in enumerate(coord_df.iterrows()):
+        x, y = fila['X'], fila['Y']
+        ax.add_patch(Circle((x, y), radius=7.32, color=sensor_colores[i], alpha=0.5))
+        ax.text(x, y, sensor, ha='center', va='center', fontsize=8)
+
+    ax.add_patch(Circle((0, 0), radius=1, color='black', alpha=0.7))  # punto (0,0)
+
+    # COP por ciclo
+    for i, (cop_x, cop_y) in enumerate(zip(copx_list, copy_list)):
+        ax.plot(cop_x, cop_y, linestyle='--', color=colores(i % 10), alpha=0.6)
+
+    # COP promedio
+    if copx_list:
+        copx_prom = pd.concat(copx_list, axis=1).mean(axis=1)
+        copy_prom = pd.concat(copy_list, axis=1).mean(axis=1)
+        ax.plot(copx_prom, copy_prom, color='black', linewidth=2, label='COP promedio')
+
+    ax.set_xlim(x_min, x_max)
+    ax.set_ylim(y_min, y_max)
+    ax.set_title(f'Pie {pie}')
+    ax.set_xlabel('X (mm)')
+    ax.set_ylabel('Y (mm)')
+    ax.grid(True)
+    ax.legend()
+
+plt.tight_layout()'''
+
+
+
+############### CORRECCIÓN y GRAFICO DE SENSORES Y CURVA vGRF ################ 
+'''def graficar_suma_por_fases_con_sensores_v2(df_sensores, resultados, indices_ciclos, lado="R"):
+
+    sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
+
+    for ciclo_info, indices_ciclo in zip(resultados[0]['details'], indices_ciclos[0]):
+        if not ciclo_info['is_valid']:
+            continue
+
+        inicio, fin = indices_ciclo[0], indices_ciclo[1]
+        datos_ciclo = df_sensores.loc[inicio:fin].copy()
+        suma_total = datos_ciclo.sum(axis=1)
+
+        peaks = ciclo_info['peaks']
+        valleys = ciclo_info['valleys']
+        
+        if len(peaks) < 2 or len(valleys) < 1:
+            print(f"Ciclo {ciclo_info['cycle_num']}: No hay suficientes picos/valles para definir fases.")
+            continue
+
+        p1, p2 = peaks[0], peaks[1]
+        v = valleys[0]
+
+        segmentos = {
+            'loading_response': (inicio, p1),
+            'midstance':        (p1, v),
+            'terminal_stance':  (v,  p2),
+            'pre_swing':        (p2, fin)
+        }
+
+        colores_fases = {
+            'loading_response': 'red',
+            'midstance': 'green',
+            'terminal_stance': 'blue',
+            'pre_swing': 'orange'
+        }
+
+        sensores_por_fase = {
+            "loading_response": [f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"], #ACA CAMBIAMOS SEGUN LOS SENSORES QUE TERMINEMOS ELIGIENDO
+            "midstance": list(datos_ciclo.columns),
+            "terminal_stance": list(datos_ciclo.columns),
+            "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4"]
+        }
+        
+        # Preparar estructura para datos reescalados
+        datos_reescalados = {
+            'suma_total_original': suma_total.copy(),
+            'suma_reescalada': pd.Series(0, index=datos_ciclo.index),
+            'fases': {},
+            'picos_valores_reescalados': {'p1': None, 'p2': None},
+            'valle_valor_reescalado': None,
+            'indices_originales': {'p1': p1, 'p2': p2, 'valle': v}
+        }
+
+        suma_reescalada = pd.Series(np.zeros(len(datos_ciclo)), index=datos_ciclo.index, dtype=float)
+        fase_sumas = {}
+
+        for fase, (start, end) in segmentos.items():
+            sensores_fase = sensores_por_fase.get(fase, [])
+            datos_fase = datos_ciclo.loc[start:end].copy()
+
+            if fase in ["loading_response", "pre_swing"]:
+                sensores_no_principales = [s for s in datos_fase.columns if s not in sensores_fase]
+
+                # Restar el aporte de sensores no principales frame a frame RESTA TODOO EL APORTE, SE PUEDE PONER PARA QUE RESTE UN % NOMAS
+                aporte_no_principales = datos_fase[sensores_no_principales].sum(axis=1)
+                suma_fase = datos_fase.sum(axis=1) - aporte_no_principales
+            else:
+                # Fases centrales: se usa todo directamente
+                suma_fase = datos_fase.sum(axis=1)
+
+            suma_reescalada.loc[start:end] = suma_fase.values
+            fase_sumas[fase] = suma_fase
+
+            datos_reescalados['fases'][fase] = {
+                'start': start,
+                'sensores_principales': sensores_fase,
+                'sensores_escalados': [s for s in datos_fase.columns if s not in sensores_fase],
+                'suma_fase': suma_fase.copy(),
+                'datos_sensores': datos_fase.copy()
+            }
+
+        # CALCULO OFFSET ENTRE EL ULTIMO VALOR DE UNA FASE Y EL INICIO DE OTRA, PARA DESPLAZAR VERTICALMENTE
+        # LOADING RESPONSE Y PRE-SWING NO SE DEBEN DESPLAZAR    
+        offset_midstance = datos_reescalados['fases']['loading_response']['suma_fase'].iloc[-1] - fase_sumas['midstance'].iloc[0]
+        datos_reescalados['fases']['midstance']['suma_fase'] += offset_midstance
+        
+        offset_terminal = datos_reescalados['fases']['midstance']['suma_fase'].iloc[-1] - fase_sumas['terminal_stance'].iloc[0]
+        datos_reescalados['fases']['terminal_stance']['suma_fase'] += offset_terminal
+        
+        
+        suma_reescalada_corregida = pd.Series(0, index=datos_ciclo.index, dtype=float)
+        for fase, (start, end) in segmentos.items():
+            suma_reescalada_corregida.loc[start:end] = datos_reescalados['fases'][fase]['suma_fase']
+        
+        
+        picos_recalc, valles_recalc = recalcular_picos_valleys(suma_reescalada_corregida)
+        
+        if picos_recalc is None or valles_recalc is None:
+            p1_recalc, p2_recalc, v_recalc = p1, p2, v
+        else:
+            p1_recalc, p2_recalc = picos_recalc
+            v_recalc = valles_recalc[0]
+        
+        p1_recalc, p2_recalc = [suma_reescalada_corregida.index[p] for p in picos_recalc] if len(picos_recalc) else []
+        v_recalc = suma_reescalada_corregida.index[v_recalc] if v_recalc else []
+        
+        segmentos = {
+            'loading_response': (inicio, p1_recalc),
+            'midstance': (p1_recalc, v_recalc),
+            'terminal_stance': (v_recalc, p2_recalc),
+            'pre_swing': (p2_recalc, fin)
+        }
+        
+        #FALTARIA ACTUALIZAR datos_reescalados() CON ESTA NUEVA INFO DE PICOS Y VALLES SIENTO (O CAPAZ QUEDARNOS CON LOS NUEVOS Y LISTO)
+        
+        plt.figure(figsize=(14, 7))
+        for fase, (start, end) in segmentos.items():
+            start = round(start, 6)
+            end = round(end, 6)
+            
+            plt.axvspan(start, end, alpha=0.2, color=colores_fases[fase], label=fase)
+
+        plt.plot(suma_total.index, suma_total.values, '--', label="Suma original")
+        #plt.plot(suma_reescalada_corregida.index, suma_reescalada_corregida.values, 'k-', label="Suma reescalada")
+
+        colormap = plt.colormaps['tab10']
+        for i, sensor in enumerate(datos_ciclo.columns):
+            plt.plot(datos_ciclo.index, datos_ciclo[sensor], color=colormap(i), alpha=0.6, label=sensor)
+        
+        #plt.plot(p1_recalc, suma_reescalada_corregida.loc[p1_recalc], 'ro')
+        #plt.plot(p2_recalc, suma_reescalada_corregida.loc[p2_recalc], 'ro')
+        #plt.plot(v_recalc,  suma_reescalada_corregida.loc[v_recalc], 'bo')
+        plt.plot(p1, suma_total.loc[p1], 'ro')
+        plt.plot(p2, suma_total.loc[p2], 'ro')
+        plt.plot(v,  suma_total.loc[v], 'bo')
+
+        plt.title(f"{sufijo} - Ciclo {ciclo_info['cycle_num']}")
+        plt.xlabel("Índice de muestra")
+        plt.ylabel("Señal")
+        plt.legend()
+        plt.tight_layout()
+
+
+graficar_suma_por_fases_con_sensores_v2(filt_der[0], results_der, indices_ciclos_der, lado="R")
+graficar_suma_por_fases_con_sensores_v2(filt_izq[0], results_izq, indices_ciclos_izq, lado="L")'''
+
+
+def graficar_suma_por_fases_normalizada(df_sensores_list, resultados, indices_ciclos, peso_kg=52, lado="R"):
+    """
+    Dibuja y devuelve un gráfico por cada pasada.
+    """
+    sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
+
+    colores_fases = {
+        'loading_response': 'red',
+        'midstance': 'green',
+        'terminal_stance': 'blue',
+        'pre_swing': 'orange'
+    }
+
+    resultados_df = []
+
+    for pasada_idx, (df_sensores, resultado_paso, indices_paso) in enumerate(zip(df_sensores_list, resultados, indices_ciclos)):
+        
+        plt.figure(figsize=(14, 7))
+        matriz_ciclos = []
+
+        for ciclo_info, indices_ciclo in zip(resultado_paso['details'], indices_paso):
             if not ciclo_info['is_valid']:
                 continue
-            
-            ciclo_num = ciclo_info['cycle_num']
-            inicio = min_indices[i][ciclo_num - 1]
-            fin = min_indices[i][ciclo_num]
-            datos_ciclo = df_crudo.iloc[inicio:fin].copy().reset_index(drop=True)
+
+            inicio, fin = indices_ciclo[0], indices_ciclo[1]
+            datos_ciclo = df_sensores.loc[inicio:fin].copy()
+
+            suma_total = (datos_ciclo.sum(axis=1) / peso_kg)
 
             peaks = ciclo_info['peaks']
             valleys = ciclo_info['valleys']
-            
-            # Validar que haya al menos 2 picos y 1 valle
+
             if len(peaks) < 2 or len(valleys) < 1:
                 continue
 
             p1, p2 = peaks[0], peaks[1]
             v = valleys[0]
 
-            # Definir segmentos
             segmentos = {
-                'loading_response': datos_ciclo.iloc[:p1],
-                'midstance': datos_ciclo.iloc[p1:v],
-                'terminal_stance': datos_ciclo.iloc[v:p2],
-                'pre_swing': datos_ciclo.iloc[p2:]
+                'loading_response': (inicio, p1),
+                'midstance': (p1, v),
+                'terminal_stance': (v, p2),
+                'pre_swing': (p2, fin)
             }
 
-            aportes_fase = {}
-            for fase, segmento in segmentos.items():
-                if segmento.empty:
-                    aporte = pd.Series(0, index=df_crudo.columns)
-                else:
-                    suma_total = segmento.sum(axis=1)
-                    aportes = segmento.div(suma_total, axis=0).fillna(0)
-                    aporte = aportes.mean()
-                aportes_fase[fase] = aporte
-                datos_resumen[fase].append(aporte)
+            x_original = np.linspace(0, 100, len(suma_total))
+            x_interp = np.linspace(0, 100, 100)
 
-            resultados['por_ciclo'].append({
-                'pasada': i + 1,
-                'ciclo': ciclo_num,
-                'aportes_por_fase': aportes_fase,
-                'duracion': ciclo_info['duration']
+            f_interp = interp1d(x_original, suma_total.values, kind='linear')
+            ciclo_interp = f_interp(x_interp)
+            matriz_ciclos.append(ciclo_interp)
+
+            for fase, (start, end) in segmentos.items():
+                idx_start = datos_ciclo.index.get_loc(start)
+                idx_end = datos_ciclo.index.get_loc(end)
+
+                x_fase = x_original[idx_start:idx_end+1]
+                y_fase = suma_total.iloc[idx_start:idx_end+1].values
+
+                plt.plot(x_fase, y_fase, '--', color=colores_fases[fase], alpha=0.4)
+
+            idx_p1 = datos_ciclo.index.get_loc(p1)
+            idx_p2 = datos_ciclo.index.get_loc(p2)
+            idx_v = datos_ciclo.index.get_loc(v)
+
+            plt.plot(x_original[idx_p1], suma_total.iloc[idx_p1], 'ro')
+            plt.plot(x_original[idx_p2], suma_total.iloc[idx_p2], 'ro')
+            plt.plot(x_original[idx_v],  suma_total.iloc[idx_v],  'bo')
+
+        if matriz_ciclos:
+            matriz = np.vstack(matriz_ciclos)
+            promedio = matriz.mean(axis=0)
+            std = matriz.std(axis=0)
+
+            plt.plot(x_interp, promedio, '-', color='black', alpha=0.7, linewidth=2, label='Promedio')
+            plt.fill_between(x_interp, promedio - std, promedio + std, color='black', alpha=0.2, label='±1 SD')
+
+            df_resultado = pd.DataFrame({
+                'Ciclo (%)': x_interp,
+                'Promedio (%BW)': promedio,
+                'STD (%BW)': std
             })
+        else:
+            df_resultado = pd.DataFrame()
 
-    # Resumen global
-    for fase in fases:
-        df_fase = pd.DataFrame(datos_resumen[fase])
-        resultados['resumen'][fase] = {
-            'media': df_fase.mean(),
-            'desviacion': df_fase.std(),
-            'min': df_fase.min(),
-            'max': df_fase.max()
-        }
+        plt.title(f"Todos los ciclos válidos - Pie {sufijo} (Pasada {pasada_idx+1}, normalizados, promedio ± STD)")
+        plt.xlabel("Porcentaje del ciclo de apoyo (%)")
+        plt.ylabel("vGRF (% BW)")
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
 
-    return resultados
+        resultados_df.append(df_resultado)
 
+    return resultados_df
 
-aportes_por_fase_der = calcular_aportes_por_fase(filt_der, results_der, min_indices_der)
-aportes_por_fase_izq = calcular_aportes_por_fase(filt_izq, results_izq, min_indices_izq)
 
-'''
-for ciclo in aportes_por_fase_der['por_ciclo']:
-    print(f"Pasada {ciclo['pasada']}, Ciclo {ciclo['ciclo']}:")
-    for fase, aporte in ciclo['aportes_por_fase'].items():
-        print(f"  {fase}:")
-        print((aporte * 100).round(2).astype(str) + " %")
-'''
+desvio_ciclos_der = graficar_suma_por_fases_normalizada(filt_der, results_der, indices_apoyo_der, lado="R")
+desvio_ciclos_izq = graficar_suma_por_fases_normalizada(filt_izq, results_izq, indices_apoyo_izq, lado="L")
 
 
-# Lista original de sensores
-coord_sensores = [
-    ['S1', 6.4, 152.1],
-    ['S2', 0, 119.4],
-    ['S3', 28.7, 124.1],
-    ['S4', 56.8, 119.6],
-    ['S5', 54.4, 63.7],
-    ['S6', 6.4, -13.9],
-    ['S7', 23.4, -29.8],
-    ['S8', 41.3, -15.3]
-]
-
-# Conversión a diccionario para fácil acceso a las coordenadas
-sensor_coords_der = {sensor: (x, -y) for sensor, x, y in coord_sensores}
-sensor_coords_izq = {sensor: (-x, -y) for sensor, x, y in coord_sensores}
-
-
-def plot_footprint_ciclo_unico(aporte_ciclo, sensor_coords, pie='R'):
-    """
-    Genera un mapa de calor por fase del ciclo (HS, FF, MS, HO) de un solo ciclo.
-
-    Args:
-        aporte_ciclo: Dict con Series de aportes por sensor por fase
-        sensor_coords: Dict con coordenadas (x, y) por sensor
-        pie: 'L' o 'R' (para etiquetado)
-    """
-    fases = ['loading_response', 'midstance', 'terminal_stance', 'pre_swing']
-    fig, axs = plt.subplots(1, 4, figsize=(18, 5), constrained_layout=True)
-
-    for i, fase in enumerate(fases):
-        media_fase = aporte_ciclo[fase]
-        x, y, intensidad = [], [], []
-
-        for sensor, value in media_fase.items():
-            sensor_simple = sensor.split('_')[-1]
-            if sensor_simple in sensor_coords:
-                xi, yi = sensor_coords[sensor_simple]
-                x.append(xi)
-                y.append(yi)
-                intensidad.append(float(value))
-
-        sc = axs[i].scatter(x, y, c=intensidad, cmap='jet', s=1000, edgecolor='k', vmin=0, vmax=1)
-        axs[i].set_title(f"{fase.replace('_', ' ').title()} ({pie})")
-        axs[i].invert_yaxis()
-        axs[i].axis('equal')
-        axs[i].axis('off')
-
-        for j, (xi, yi, val) in enumerate(zip(x, y, intensidad)):
-            axs[i].text(xi, yi, f"{val:.2f}", ha='center', va='center', fontsize=9, color='black')
-
-    cbar = fig.colorbar(sc, ax=axs, orientation='vertical', fraction=0.015, pad=0.04)
-    cbar.set_label('Aporte relativo')
-   
-'''
-# Tomar el ciclo 0
-ciclo_0 = aportes_por_fase_der['por_ciclo'][0]['aportes_por_fase']
-plot_footprint_ciclo_unico(ciclo_0, sensor_coords_der, pie='R')
-
-ciclo_0 = aportes_por_fase_izq['por_ciclo'][0]['aportes_por_fase']
-plot_footprint_ciclo_unico(ciclo_0, sensor_coords_izq, pie='L')
-'''
-
-'''
-################### CURVA SUMA TOTAL ###########################
-def graficar_suma_por_fases(sums_data, res_pasada, min_indices, ciclo_num=1):
-    """
-    Grafica la suma de sensores para un ciclo específico, resaltando las fases.
-    
-    Args:
-        sums_data: Lista de Series (suma de sensores por pasada)
-        res_pasada: Resultados de detección para la pasada
-        min_indices: Índices de inicio/fin de ciclos
-        ciclo_num: Número del ciclo a graficar (1-based)
-    """
-    if not res_pasada['valid']:
-        print("Pasada no válida.")
-        return
-    
-    ciclo_info = next((c for c in res_pasada['details'] if c['cycle_num'] == ciclo_num and c['is_valid']), None)
-    if not ciclo_info:
-        print(f"Ciclo {ciclo_num} no válido o no encontrado.")
-        return
-    
-    inicio = min_indices[ciclo_num - 1]
-    fin = min_indices[ciclo_num]
-    datos_ciclo = sums_data.iloc[inicio:fin].copy().reset_index(drop=True)
-    
-    peaks = ciclo_info['peaks']
-    valleys = ciclo_info['valleys']
-    
-    if len(peaks) < 2 or len(valleys) < 1:
-        print("No hay suficientes picos/valles para definir fases.")
-        return
-    
-    p1, p2 = peaks[0], peaks[1]
-    v = valleys[0]
-    
-    # Definir segmentos
-    segmentos = {
-        'loading_response': (0, p1),
-        'midstance': (p1, v),
-        'terminal_stance': (v, p2),
-        'pre_swing': (p2, len(datos_ciclo))
-    }
-    
-    # Configurar gráfico
-    plt.figure(figsize=(12, 5))
-    
-    # Graficar la curva de suma
-    plt.plot(datos_ciclo, label='Suma de sensores', color='black', linewidth=2)
-    
-    # Colores para cada fase
-    colores = {
-        'loading_response': 'red',
-        'midstance': 'green',
-        'terminal_stance': 'blue',
-        'pre_swing': 'orange'
-    }
-    
-    # Resaltar cada fase
-    for fase, (start, end) in segmentos.items():
-        plt.axvspan(start, end, color=colores[fase], alpha=0.2, label=fase)
-    
-    # Marcar puntos clave
-    plt.scatter([p1, p2], [datos_ciclo.iloc[p1], datos_ciclo.iloc[p2]], color='red', zorder=5, label='Picos')
-    plt.scatter([v], [datos_ciclo.iloc[v]], color='blue', zorder=5, label='Valle')
-    
-    plt.xlabel('Muestras')
-    plt.ylabel('Valor sumado')
-    plt.title(f'Suma de sensores - Ciclo {ciclo_num} - División por fases')
-    plt.legend(loc='upper right')
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.tight_layout()
-
-def graficar_suma_multiple_ciclos(sums_data_list, resultados_deteccion, min_indices, n_ciclos=3):
-    """Grafica la suma de sensores para los primeros n ciclos válidos."""
-    ciclos_graficados = 0
-    
-    for sums_data, res_pasada, indices in zip(sums_data_list, resultados_deteccion, min_indices):
-        if not res_pasada['valid']:
-            continue
-            
-        for ciclo_info in res_pasada['details']:
-            if not ciclo_info['is_valid'] or ciclos_graficados >= n_ciclos:
-                continue
-                
-            graficar_suma_por_fases(sums_data, res_pasada, indices, ciclo_info['cycle_num'])
-            ciclos_graficados += 1
-
-graficar_suma_multiple_ciclos(sums_der_subset, results_der, min_indices_der, n_ciclos=2)
-plt.show()
-'''
-
-def recalcular_picos_valleys(datos_ciclo):
-    """
-    Recalcula picos y valles para un ciclo dado.
-
-    Args:
-        datos_ciclo (pd.DataFrame): Datos del ciclo (solo sensores).
-
-    Returns:
-        tuple: (picos, valles)
-    """
-    max_val = np.max(datos_ciclo)
-    min_prominence = max_val * 0.05  # 5% prominencia
-    min_height = max_val * 0.1       # 10% altura mínima
-
-    peaks, _ = find_peaks(datos_ciclo, prominence=min_prominence, height=min_height)
-    valleys, _ = find_peaks(-datos_ciclo, prominence=min_prominence)
-
-    # Solo consideramos primeros 2 picos y 1 valle para definir fases
-    if len(peaks) < 2 or len(valleys) < 1:
-        return None, None
-    return peaks[:2], valleys[:1]
-
-
-def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=2, lado="R", escala_excluidos=0.15):
-    """
-    Grafica la suma reescalada por fases con los picos y valles ajustados,
-    mostrando sensores individuales escalados y devuelve los datos reescalados.
-
-    Args:
-        df_sensores_list: Lista de DataFrames (uno por pasada), cada uno con columnas por sensor
-        res_pasada: Resultados de detección para la pasada
-        min_indices: Índices de inicio/fin de ciclos para esta pasada
-        ciclo_num: Número del ciclo a graficar (1-based)
-        pasada_index: Índice de la pasada en df_sensores_list
-        lado: "R" para pie derecho, "L" para pie izquierdo
-        escala_excluidos: Factor de escala para sensores no principales (0.05 = 5%)
-
-    Returns:
-        dict: Diccionario con los datos reescalados y las fases
-    """
-    if not res_pasada['valid']:
-        print("Pasada no válida.")
-        return None
-
-    ciclo_info = next((c for c in res_pasada['details'] if c['cycle_num'] == ciclo_num and c['is_valid']), None)
-    if not ciclo_info:
-        print(f"Ciclo {ciclo_num} no válido o no encontrado.")
-        return None
-
-    df_ciclo = df_sensores_list[pasada_index]
-    inicio = min_indices[ciclo_num - 1]
-    fin = min_indices[ciclo_num]
-    datos_ciclo = df_ciclo.iloc[inicio:fin].copy().reset_index(drop=True)
-    suma_total = datos_ciclo.sum(axis=1)
-
-    # Obtener picos y valles originales
-    peaks = ciclo_info['peaks']
-    valleys = ciclo_info['valleys']
-
-    if len(peaks) < 2 or len(valleys) < 1:
-        print("No hay suficientes picos/valles para definir fases.")
-        return None
-
-    p1, p2 = peaks[0], peaks[1]
-    v = valleys[0]
-
-    # Definir fases con índices originales
-    segmentos = {
-        'loading_response': (0, p1),
-        'midstance': (p1, v),        # hasta justo antes del valle
-        'terminal_stance': (v, p2),     # empieza en el valle
-        'pre_swing': (p2, len(datos_ciclo)-1)
-}
-
-    colores_fases = {
-        'loading_response': 'red',
-        'midstance': 'green',
-        'terminal_stance': 'blue',
-        'pre_swing': 'orange'
-    }
-
-    # Determinar sufijo según lado
-    sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
-
-    sensores_por_fase = {
-        "loading_response": [f"{sufijo}_S3", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
-        "midstance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
-        "terminal_stance": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
-        "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S5", f"{sufijo}_S4"],
-    }
-
-    # Preparar estructura para datos reescalados
-    datos_reescalados = {
-        'suma_total_original': suma_total.copy(),
-        'suma_reescalada': pd.Series(0, index=datos_ciclo.index),
-        'fases': {},
-        'picos_valores_reescalados': {'p1': None, 'p2': None},
-        'valle_valor_reescalado': None,
-        'indices_originales': {'p1': p1, 'p2': p2, 'valle': v}
-    }
-
-    # Paso 1: Calcular suma reescalada fase a fase con escala normal (sin ajustar aún)
-    suma_reescalada = pd.Series(np.zeros(len(datos_ciclo)), dtype=float)
-    fase_sumas = {}
-    for fase, (start, end) in segmentos.items():
-        sensores_fase = sensores_por_fase.get(fase, [])
-        fase_data = pd.DataFrame(index=range(start, end+1))
-        for sensor in datos_ciclo.columns:
-            if sensor in sensores_fase:
-                fase_data[sensor] = datos_ciclo.loc[start:end, sensor]
-            else:
-                fase_data[sensor] = datos_ciclo.loc[start:end, sensor] * escala_excluidos
-        suma_fase = fase_data.sum(axis=1)
-        suma_reescalada.loc[start:end] = suma_fase
-        fase_sumas[fase] = suma_fase
-
-        datos_reescalados['fases'][fase] = {
-            'start': start,
-            'sensores_principales': sensores_fase,
-            'sensores_escalados': [s for s in datos_ciclo.columns if s not in sensores_fase],
-            'suma_fase': suma_fase.copy(),
-            'datos_sensores': fase_data.copy()
-        }
-    
-    # Paso 2: Ajustar escala de 2da fase (midstance) para que inicie desde fin de 1ra fase
-    factor_midstance = fase_sumas['loading_response'].iloc[-1] / fase_sumas['midstance'].iloc[0]
-    datos_reescalados['fases']['midstance']['suma_fase'] *= factor_midstance
-    datos_reescalados['fases']['midstance']['datos_sensores'] *= factor_midstance
-    
-    # Paso 3: Ajustar escala de 3era fase (terminal_stance) para que inicie desde fin de 2da fase
-    factor_terminal = datos_reescalados['fases']['midstance']['suma_fase'].iloc[-1] / fase_sumas['terminal_stance'].iloc[1]
-    datos_reescalados['fases']['terminal_stance']['suma_fase'] *= factor_terminal
-    datos_reescalados['fases']['terminal_stance']['datos_sensores'] *= factor_terminal
-
-    # Paso 4: Ajustar escala de 4ta fase (pre_swing) para que inicie desde fin de la 3era fase (terminal_stance)
-    factor_pre_swing = datos_reescalados['fases']['terminal_stance']['suma_fase'].iloc[-1] / fase_sumas['pre_swing'].iloc[1]
-    datos_reescalados['fases']['pre_swing']['suma_fase'] *= factor_pre_swing
-    datos_reescalados['fases']['pre_swing']['datos_sensores'] *= factor_pre_swing
- 
-    # Reconstruir suma_reescalada continua corregida
-    suma_reescalada_corregida = pd.Series(0, index=datos_ciclo.index, dtype=float)
-    for fase, (start, end) in segmentos.items():
-        suma_reescalada_corregida.loc[start:end] = datos_reescalados['fases'][fase]['suma_fase']
-        
-    # Paso 5: Recalcular picos y valles sobre suma corregida para definir fases reales
-    picos_recalc, valles_recalc = recalcular_picos_valleys(suma_reescalada_corregida)
-
-    if picos_recalc is None or valles_recalc is None:
-        # Si no se pudo recalcular, mantenemos originales
-        picos_recalc = [p1, p2]
-        valles_recalc = [v]
-
-    p1_recalc, p2_recalc = picos_recalc[0], picos_recalc[1]
-    v_recalc = valles_recalc[0]
-
-    # Recalcular segmentos con los nuevos picos y valles
-    segmentos = {
-        'loading_response': (0, p1_recalc),
-        'midstance': (p1_recalc, v_recalc),      # Excluyendo p1 y v
-        'terminal_stance': (v_recalc, p2_recalc),         # Incluyendo v y p2
-        'pre_swing': (p2_recalc, len(datos_ciclo) - 1)  # Excluyendo p2
-    }
-    
-    for fase, (start, end) in segmentos.items():
-        sensores_fase = datos_reescalados['fases'][fase]['sensores_principales']
-        fase_data = pd.DataFrame(index=range(start, end + 1))
-        for sensor in datos_ciclo.columns:
-            if sensor in sensores_fase:
-                fase_data[sensor] = datos_ciclo.loc[start:end, sensor]
-            else:
-                fase_data[sensor] = datos_ciclo.loc[start:end, sensor] * escala_excluidos
-        datos_reescalados['fases'][fase]['start'] = start
-        datos_reescalados['fases'][fase]['datos_sensores'] = fase_data.copy()
-
-        
-    sensores_unicos = list(datos_ciclo.columns)
-
-    # Mapa de colores fijo
-    colormap = cm.get_cmap('tab10', len(sensores_unicos))  # o usa 'Set1', 'tab20', etc.
-    colores_sensores = {sensor: colormap(i) for i, sensor in enumerate(sensores_unicos)}
-
-    # Graficar todo
-    plt.figure(figsize=(14, 7))
-
-    # Colorear bandas de fase según nuevos segmentos
-    for fase, (start, end) in segmentos.items():
-        plt.axvspan(datos_ciclo.index[start], datos_ciclo.index[end], alpha=0.2, color=colores_fases[fase], label=fase)
-
-    # Graficar suma corregida
-    plt.plot(suma_total.index, suma_total.values, '--', label="Suma original")
-    plt.plot(suma_reescalada_corregida.index, suma_reescalada_corregida.values, 'k-', label="Suma reescalada")
-
-    # Usar el índice real del ciclo
-    index_ciclo = datos_ciclo.index
-
-    # Set para no repetir etiquetas
-    labels_agregados = set()
-
-    # Graficar sensores individuales reescalados
-    for fase, info_fase in datos_reescalados['fases'].items():
-        start = info_fase['start']
-        y_vals_df = info_fase['datos_sensores']
-
-        # Index real que corresponde a los datos de sensores
-        x_vals = index_ciclo[start : start + len(y_vals_df)]
-
-        '''# Debug prints para verificar coherencia
-        print(f"\n[{fase.upper()}] start={start}")
-        print("→ len(y_vals_df):", len(y_vals_df))
-        print("→ index_ciclo range:", list(index_ciclo[start : start + len(y_vals_df)]))
-        print("→ index_ciclo full:", list(index_ciclo))'''
-
-        for sensor in y_vals_df.columns:
-            y_vals = y_vals_df[sensor].values
-            if len(x_vals) != len(y_vals):
-                print(f"⚠️ Mismatch en sensor {sensor} ({fase}): len(x)={len(x_vals)} vs len(y)={len(y_vals)}")
-
-            if sensor not in labels_agregados:
-                plt.plot(x_vals, y_vals, color=colores_sensores[sensor], alpha=0.6, label=sensor)
-                labels_agregados.add(sensor)
-            else:
-                plt.plot(x_vals, y_vals, color=colores_sensores[sensor], alpha=0.6)
-
-    # Ahora la leyenda será única sin hacer deduplicación post-hoc
-    plt.legend()
-
-    # Marcar picos y valles sobre la suma
-    plt.plot(datos_ciclo.index[p1_recalc], suma_reescalada_corregida.iloc[p1_recalc], 'ro')
-    plt.plot(datos_ciclo.index[p2_recalc], suma_reescalada_corregida.iloc[p2_recalc], 'ro')
-    plt.plot(datos_ciclo.index[v_recalc], suma_reescalada_corregida.iloc[v_recalc], 'bo')
-    
-    plt.plot(datos_ciclo.index[p1], suma_total.iloc[p1], 'ro')
-    plt.plot(datos_ciclo.index[p2], suma_total.iloc[p2], 'ro')
-    plt.plot(datos_ciclo.index[v], suma_total.iloc[v], 'bo')
-
-    plt.title(f"{sufijo} - Pasada {pasada_index+1} - Ciclo {ciclo_num} - Lado {lado}")
-    plt.xlabel("Índice de muestra")
-    plt.ylabel("Señal reescalada (sumatoria)")
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
-
-
-    # Guardar valores de picos y valle recalculados para salida
-    datos_reescalados['picos_valores_reescalados']['p1'] = suma_reescalada_corregida.iloc[p1]
-    datos_reescalados['picos_valores_reescalados']['p2'] = suma_reescalada_corregida.iloc[p2]
-    datos_reescalados['valle_valor_reescalado'] = suma_reescalada_corregida.iloc[v]
-    datos_reescalados['indices_originales'] = {'p1': p1, 'p2': p2, 'valle': v}
-    datos_reescalados['suma_reescalada'] = suma_reescalada_corregida
-
-    return datos_reescalados
-
-
-def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_deteccion, min_indices_list, 
-                                              max_pasadas=None, max_ciclos_por_pasada=None, 
-                                              max_ciclos_totales=None, lado="R", escala_excluidos=0.15):
-    """
-    Grafica múltiples ciclos con datos reescalados y devuelve todos los datos procesados.
-
-    Args:
-        ... (parámetros anteriores)
-        escala_excluidos: Factor de escala para sensores no principales
-    
-    Returns:
-        list: Lista de diccionarios con datos reescalados por ciclo
-    """
-    ciclos_graficados = 0
-    todos_datos_reescalados = []
-
-    for pasada_index, (df_sensores, res_pasada, indices) in enumerate(zip(sums_data_list, resultados_deteccion, min_indices_list)):
-        if max_pasadas is not None and pasada_index >= max_pasadas:
-            break
-            
-        if not res_pasada['valid']:
-            continue
-
-        ciclos_en_pasada = 0
-        
-        for ciclo_info in res_pasada['details']:
-            if (not ciclo_info['is_valid'] or 
-                (max_ciclos_por_pasada is not None and ciclos_en_pasada >= max_ciclos_por_pasada) or
-                (max_ciclos_totales is not None and ciclos_graficados >= max_ciclos_totales)):
-                continue
-
-            datos_reescalados = graficar_suma_por_fases_con_sensores(
-                df_sensores_list=sums_data_list,
-                res_pasada=res_pasada,
-                min_indices=indices,
-                ciclo_num=ciclo_info['cycle_num'],
-                pasada_index=pasada_index,
-                lado=lado,
-                escala_excluidos=escala_excluidos
-            )
-            
-            if datos_reescalados is not None:
-                todos_datos_reescalados.append(datos_reescalados)
-                ciclos_graficados += 1
-                ciclos_en_pasada += 1
-
-    return todos_datos_reescalados
-
-
-graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, lado="R", escala_excluidos=0.15)
-graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, lado="L", escala_excluidos=0.15)
 plt.show()
 
-
-
 '''
-def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=0, lado="R"):
-    """
-    Grafica la suma total de sensores y la suma por fase para un ciclo,
-    con corrección para alinear correctamente picos y valles.
+def calculo_bw(sums_der, sums_izq):
 
-    Args:
-        df_sensores_list: Lista de DataFrames con datos de sensores
-        res_pasada: Resultados de detección para la pasada
-        min_indices: Índices de inicio/fin de ciclos
-        ciclo_num: Número del ciclo a graficar
-        pasada_index: Índice de la pasada a analizar
-        lado: "R" (derecho) o "L" (izquierdo)
-    """
-    # Validación inicial
-    if not res_pasada['valid']:
-        print("Pasada no válida.")
-        return
-
-    # Obtener información del ciclo específico
-    ciclo_info = next((c for c in res_pasada['details'] 
-                     if c['cycle_num'] == ciclo_num and c['is_valid']), None)
-    if not ciclo_info:
-        print(f"Ciclo {ciclo_num} no válido o no encontrado.")
-        return
-
-    # Extraer datos del ciclo
-    df_pasada = df_sensores_list[pasada_index]
-    inicio = min_indices[ciclo_num - 1]
-    fin = min_indices[ciclo_num]
-    datos_ciclo = df_pasada.iloc[inicio:fin].copy()
-
-    # Obtener picos y valles (índices locales al ciclo)
-    peaks = ciclo_info['peaks']
-    valleys = ciclo_info['valleys']
-
-    # Verificación de índices
-    ciclo_length = len(datos_ciclo)
-    if not all(0 <= p < ciclo_length for p in peaks + valleys):
-        print(f"Error: Índices fuera de rango. Longitud del ciclo: {ciclo_length}")
-        print(f"Peaks: {peaks}")
-        print(f"Valleys: {valleys}")
-        return
-
-    if len(peaks) < 2 or len(valleys) < 1:
-        print("No hay suficientes picos/valles para definir fases.")
-        return
-
-    # Calcular suma total
-    suma_total = datos_ciclo.sum(axis=1)
-
-    # Definir segmentos de fase (inclusivos)
-    segmentos = {
-        'loading_response': (0, peaks[0]),
-        'midstance': (peaks[0], valleys[0]),
-        'terminal_stance': (valleys[0], peaks[1]),
-        'pre_swing': (peaks[1], ciclo_length - 1)
-    }
-
-    # Configuración de colores
-    colores_fases = {
-        'loading_response': (1, 0.8, 0.8),  # Rojo claro
-        'midstance': (0.8, 1, 0.8),         # Verde claro
-        'terminal_stance': (0.8, 0.8, 1),    # Azul claro
-        'pre_swing': (1, 0.9, 0.8)          # Naranja claro
-    }
+    grf_der = []
+    grf_izq = []
     
-    colores_bordes = {
-        'loading_response': 'red',
-        'midstance': 'green',
-        'terminal_stance': 'blue',
-        'pre_swing': 'orange'
-    }
+    BW = 52
 
-    # Configuración de figura
-    plt.figure(figsize=(14, 8))
-    ax = plt.gca()
+    # Iterar a través de los dataframes y los valores de BW_med correspondientes
+    for df in sums_der:
+        # Calcular el porcentaje de GRF respecto al BW correspondiente
+        porcentaje_der = df / BW
 
-    # Dibujar áreas de fase
-    for fase, (start, end) in segmentos.items():
-        ax.axvspan(start, end, 
-                  facecolor=colores_fases[fase],
-                  edgecolor=colores_bordes[fase],
-                  linestyle='--',
-                  alpha=0.3,
-                  label=f'Fase: {fase}')
+        # Añadir a la lista de porcentajes
+        grf_der.append(porcentaje_der)
+        
+    for df in sums_izq:
+        # Calcular el porcentaje de GRF respecto al BW correspondiente
+        porcentaje_izq = df / BW
 
-    # Graficar suma total
-    ax.plot(suma_total, label='Suma total', color='black', linewidth=3, zorder=5)
-
-    # Graficar eventos clave
-    ax.scatter(peaks, suma_total.iloc[peaks], color='red', s=100, zorder=10, label='Picos')
-    ax.scatter(valleys, suma_total.iloc[valleys], color='blue', s=100, zorder=10, label='Valles')
-
-    # Líneas verticales para transiciones
-    for p in peaks:
-        ax.axvline(x=p, color='red', linestyle=':', alpha=0.5)
-    for v in valleys:
-        ax.axvline(x=v, color='blue', linestyle=':', alpha=0.5)
-
-    # Configuración del gráfico
-    ax.set_xlabel('Muestras (índices relativos al ciclo)', fontsize=12)
-    ax.set_ylabel('Valor FSR', fontsize=12)
-    ax.set_title(f'Pie {"Derecho" if lado=="R" else "Izquierdo"} - Ciclo {ciclo_num}', fontsize=14)
+        # Añadir a la lista de porcentajes
+        grf_izq.append(porcentaje_izq)
     
-    # Leyenda mejorada
-    handles, labels = ax.get_legend_handles_labels()
-    # Ordenar: fases primero, luego eventos
-    phase_handles = [h for h, l in zip(handles, labels) if l.startswith('Fase:')]
-    event_handles = [h for h, l in zip(handles, labels) if not l.startswith('Fase:')]
-    
-    ax.legend(phase_handles + event_handles, 
-             [l for l in labels if l.startswith('Fase:')] + [l for l in labels if not l.startswith('Fase:')],
-             bbox_to_anchor=(1.05, 1), 
-             loc='upper left')
+    return grf_der, grf_izq
 
-    plt.grid(True, linestyle='--', alpha=0.4)
+grf_der, grf_izq = calculo_bw(sums_der, sums_izq)
+
+# Definir cantidad de pasadas
+num_pasadas = max(len(grf_der), len(grf_izq))
+
+# Evitar error si no hay datos
+if num_pasadas == 0:
+    print("No data to plot.")
+else:
+    # Crear figura con subplots separados (2 columnas: izquierda y derecha)
+    fig, axes = plt.subplots(nrows=num_pasadas, ncols=2, figsize=(15, num_pasadas * 3), squeeze=False)
+    
+    # Iterar sobre las pasadas
+    for i in range(num_pasadas):
+        # --- Gráfico DERECHO (columna 0) ---
+        if i < len(grf_der):
+            grf_der[i].plot(ax=axes[i, 0], color='b')
+            axes[i, 0].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+            axes[i, 0].set_title(f'GRF Derecha - Pasada N°{i+1}')
+            axes[i, 0].set_ylabel(f'%BW')  # Leyenda personalizada
+            axes[i, 0].legend()
+        
+        # --- Gráfico IZQUIERDO (columna 1) ---
+        if i < len(grf_izq):
+            grf_izq[i].plot(ax=axes[i, 1], color='g')
+            axes[i, 1].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+            axes[i, 1].set_title(f'GRF Izquierda - Pasada N°{i+1}')
+            axes[i, 1].set_ylabel(f'%BW')  # Leyenda personalizada
+            axes[i, 1].legend()
+
+    # Ajustar diseño y mostrar
     plt.tight_layout()
-    plt.show()
-
-graficar_suma_por_fases_con_sensores(
-    df_sensores_list=filt_der_subset,
-    res_pasada=results_der[0],
-    min_indices=min_indices_der[0],
-    ciclo_num=4,
-    pasada_index=0,
-    lado="R"
-)
-
-graficar_suma_por_fases_con_sensores(
-    df_sensores_list=filt_izq_subset,
-    res_pasada=results_izq[0],
-    min_indices=min_indices_izq[0],
-    ciclo_num=4,
-    pasada_index=0,
-    lado="L"
-)
-
 '''
 
 
-'''
-################### ESCALADO CON FACTOR FIJO ##########################3
-def graficar_suma_por_fases_con_sensores(df_sensores_list, res_pasada, min_indices, ciclo_num=1, pasada_index=0, lado="R"):
-    if not res_pasada['valid']:
-        print("Pasada no válida.")
-        return
-
-    ciclo_info = next((c for c in res_pasada['details'] if c['cycle_num'] == ciclo_num and c['is_valid']), None)
-    if not ciclo_info:
-        print(f"Ciclo {ciclo_num} no válido o no encontrado.")
-        return
-
-    df_ciclo = df_sensores_list[pasada_index]
-    inicio = min_indices[ciclo_num - 1]
-    fin = min_indices[ciclo_num]
-    datos_ciclo = df_ciclo.iloc[inicio:fin].copy().reset_index(drop=True)
-
-    peaks = ciclo_info['peaks']
-    valleys = ciclo_info['valleys']
-
-    if len(peaks) < 2 or len(valleys) < 1:
-        print("No hay suficientes picos/valles para definir fases.")
-        return
-
-    p1, p2 = peaks[0], peaks[1]
-    v = valleys[0]
-
-    # Definición de segmentos por fase
-    segmentos = {
-        'loading_response': (0, p1),
-        'midstance': (p1, v),
-        'terminal_stance': (v, p2),
-        'pre_swing': (p2, len(datos_ciclo))
-    }
-
-    colores_fases = {
-        'loading_response': 'red',
-        'midstance': 'green',
-        'terminal_stance': 'blue',
-        'pre_swing': 'orange'
-    }
-
-    # Determinar sufijo según lado
-    sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
-
-    sensores_por_fase = {
-        "loading_response": [f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
-        "midstance": [f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5",  f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"],
-        "terminal_stance": [f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4", f"{sufijo}_S5"],
-        "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4"],
-    }
-
-    curva_total_ajustada = np.zeros(len(datos_ciclo))
-
-    for fase, (start, end) in segmentos.items():
-        sensores_validos = sensores_por_fase[fase]
-        sensores_presentes = [s for s in sensores_validos if s in datos_ciclo.columns]
-        sensores_no_validos = [s for s in datos_ciclo.columns if s not in sensores_validos]
-
-        fase_df = datos_ciclo.iloc[start:end].copy()
-
-        # Suma de sensores válidos
-        suma_validos = fase_df[sensores_presentes].sum(axis=1) if sensores_presentes else 0
-
-        # Reducir el aporte de no válidos con un factor
-        factor = 0.1
-        suma_no_validos = (fase_df[sensores_no_validos] * factor).sum(axis=1) if sensores_no_validos else 0
-
-        suma_fase_ajustada = suma_validos + suma_no_validos
-        curva_total_ajustada[start:end] = suma_fase_ajustada
-
-    # Plot
-    plt.figure(figsize=(14, 6))
-
-    for fase, (start, end) in segmentos.items():
-        plt.axvspan(start, end, color=colores_fases[fase], alpha=0.2, label=fase)
-
-    suma_original = datos_ciclo.sum(axis=1)
-    plt.plot(curva_total_ajustada, label='Curva ajustada', color='black', linewidth=2)
-    plt.plot(suma_original, label='Curva original', color='gray', linestyle='--')
-
-    # Sensores individuales
-    colores_sensores = plt.cm.tab10.colors
-    for i, sensor in enumerate(datos_ciclo.columns):
-        plt.plot(datos_ciclo[sensor], label=sensor, color=colores_sensores[i % len(colores_sensores)], alpha=0.5)
-
-    # Eventos
-    plt.scatter([p1, p2], [suma_original.iloc[p1], suma_original.iloc[p2]], color='red', zorder=5, label='Picos')
-    plt.scatter([v], [suma_original.iloc[v]], color='blue', zorder=5, label='Valle')
-
-    plt.xlabel('Muestras')
-    plt.ylabel('Valor FSR')
-    plt.title(f'Ciclo {ciclo_num} - Curva ajustada y sensores individuales ({lado})')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    plt.grid(True, linestyle='--', alpha=0.6)
-    plt.tight_layout()
-
-def graficar_suma_multiple_ciclos_con_sensores(sums_data_list, resultados_deteccion, min_indices_list, n_ciclos=3, lado="R"):
-    """
-    Grafica la suma de sensores y sensores individuales para los primeros n ciclos válidos de múltiples pasadas.
-    """
-    ciclos_graficados = 0
-
-    for i, (df_sensores, res_pasada, indices) in enumerate(zip(sums_data_list, resultados_deteccion, min_indices_list)):
-        if not res_pasada['valid']:
-            continue
-
-        for ciclo_info in res_pasada['details']:
-            if not ciclo_info['is_valid'] or ciclos_graficados >= n_ciclos:
-                continue
-
-            graficar_suma_por_fases_con_sensores(
-                df_sensores_list=sums_data_list,
-                res_pasada=res_pasada,
-                min_indices=indices,
-                ciclo_num=ciclo_info['cycle_num'],
-                pasada_index=i,
-                lado=lado
-            )
-            ciclos_graficados += 1
-
-
-graficar_suma_multiple_ciclos_con_sensores(filt_der_subset, results_der, min_indices_der, n_ciclos=3, lado="R")
-graficar_suma_multiple_ciclos_con_sensores(filt_izq_subset, results_izq, min_indices_izq, n_ciclos=3, lado="L")
-
-'''

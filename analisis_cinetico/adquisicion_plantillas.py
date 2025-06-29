@@ -104,8 +104,8 @@ if arduino_izquierda and arduino_izquierda.is_open:
 
 # Save data to CSV
 try:
-    df_derecha.to_csv('datos_derecha_S3_3.csv', index=False)
-    df_izquierda.to_csv('datos_izquierda_S3_3.csv', index=False)
+    df_derecha.to_csv('datos_derecha_25_06_Ultimo5.csv', index=False)
+    df_izquierda.to_csv('datos_izquierda_20_06_Ultimo5.csv', index=False)
     print("Datos guardados exitosamente")
 except Exception as e:
     print(f"Error al guardar archivos CSV: {e}")

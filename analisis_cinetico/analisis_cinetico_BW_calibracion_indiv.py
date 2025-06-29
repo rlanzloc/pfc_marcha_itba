@@ -17,7 +17,7 @@ from scipy.stats import pearsonr
 ############## CARGA DE DATOS ###################
 
 # Definir la ruta base
-base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv_sin/"
+base_path = "C:/Users/Rashel Lanz Lo Curto/pfc_marcha_itba/analisis_cinetico/calibracion_indiv_sin_10_04/"
 
 # Lista de sensores y pies (ajusta esto según tus datos)
 sensor_pie_list = [
@@ -70,6 +70,7 @@ for f in archivos_csv:
 # Lista de nombres de archivos sin la extensión
 variables = [os.path.splitext(f)[0] for f in archivos_csv]
 
+print(variables)
 
 # Filtrar los DataFrames en listas separadas
 raw_izq = [df for name, df in zip(variables, dfs) if "izquierda" in name.lower()]
@@ -325,24 +326,32 @@ def subset(sums, t_inicio, t_fin):
     if isinstance(sums, list):
         # Si es una lista, aplica el filtrado a cada DataFrame en la lista
         sums_subset = [df[(df.index >= t_inicio) & (df.index <= t_fin)] for df in sums]
+        sums_subset = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_subset]
     else:
         # Si es un solo DataFrame, aplica el filtrado directamente
         sums_subset = sums[(sums.index >= t_inicio) & (sums.index <= t_fin)]
-    
+
     return sums_subset
 
+for i, (sum_der, sum_izq, filt_d, filt_i) in enumerate(zip(sums_der, sums_izq, filt_der, filt_izq)):
+    tf_der = sum_der.index[-1]
+    tf_izq = sum_izq.index[-1]
+    
+    
+    dif = tf_der - tf_izq
+    
+    sum_der = sum_der.copy()
+    filt_d = filt_d.copy()
+    sum_der.index = sum_der.index - dif
+    filt_d.index = filt_d.index - dif
 
-for i, (sum_der, sum_izq) in enumerate(zip(sums_der, sums_izq)):
-    tf_der = sum_der.index[-1]  # Último tiempo de sum_der
-    tf_izq = sum_izq.index[-1]  # Último tiempo de sum_izq
+    ti = sum_izq.index[0]
     
-    dif = tf_der - tf_izq  # Diferencia entre los últimos tiempos
-    sum_der.index = sum_der.index - dif  # Ajusta los índices de sum_der
-    ti = sum_izq.index[0]  # Primer tiempo de sum_izq
-    
-    # Aplica subset y actualiza las listas originales
-    sums_der[i] = subset(sum_der, ti, tf_izq)  # Filtra sum_der y actualiza sums_der
-    sums_izq[i] = subset(sum_izq, ti, tf_izq)  # Filtra sum_izq y actualiza sums_izq
+    # Filtrar tanto suma como datos crudos
+    sums_der[i] = subset(sum_der, ti, tf_izq)
+    sums_izq[i] = subset(sum_izq, ti, tf_izq)
+    filt_der[i] = subset(filt_d, ti, tf_izq)  
+    filt_izq[i] = subset(filt_i, ti, tf_izq)
 
 # Define cuántos/qué DataFrames quieres visualizar (ejemplo con las últimas 3 pasadas)
 filt_der_2 = filt_der # Esto selecciona los últimos 3 DataFrames de filt_der
@@ -436,4 +445,184 @@ else:
     plt.tight_layout()
     plt.show()
     
+
+
+def calculo_bw(sums_der, sums_izq):
+
+    grf_der = []
+    grf_izq = []
     
+    BW = 51
+
+    # Iterar a través de los dataframes y los valores de BW_med correspondientes
+    for df in sums_der:
+        # Calcular el porcentaje de GRF respecto al BW correspondiente
+        porcentaje_der = df / BW
+
+        # Añadir a la lista de porcentajes
+        grf_der.append(porcentaje_der)
+        
+    for df in sums_izq:
+        # Calcular el porcentaje de GRF respecto al BW correspondiente
+        porcentaje_izq = df / BW
+
+        # Añadir a la lista de porcentajes
+        grf_izq.append(porcentaje_izq)
+    
+    return grf_der, grf_izq
+
+grf_der, grf_izq = calculo_bw(sums_der, sums_izq)
+
+# Definir cantidad de pasadas
+num_pasadas = max(len(grf_der), len(grf_izq))
+
+# Evitar error si no hay datos
+if num_pasadas == 0:
+    print("No data to plot.")
+else:
+    # Crear figura con subplots separados (2 columnas: izquierda y derecha)
+    fig, axes = plt.subplots(nrows=num_pasadas, ncols=2, figsize=(15, num_pasadas * 3), squeeze=False)
+    
+    # Iterar sobre las pasadas
+    for i in range(num_pasadas):
+        # --- Gráfico DERECHO (columna 0) ---
+        if i < len(grf_der):
+            grf_der[i].plot(ax=axes[i, 0], color='b')
+            axes[i, 0].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+            axes[i, 0].set_title(f'GRF Derecha - Pasada N°{i+1}')
+            axes[i, 0].set_ylabel(f'%BW')  # Leyenda personalizada
+            axes[i, 0].legend()
+        
+        # --- Gráfico IZQUIERDO (columna 1) ---
+        if i < len(grf_izq):
+            grf_izq[i].plot(ax=axes[i, 1], color='g')
+            axes[i, 1].axhline(y=1, color='r', linestyle='--', label='Referencia 1N')
+            axes[i, 1].set_title(f'GRF Izquierda - Pasada N°{i+1}')
+            axes[i, 1].set_ylabel(f'%BW')  # Leyenda personalizada
+            axes[i, 1].legend()
+
+    # Ajustar diseño y mostrar
+    plt.tight_layout()
+    plt.show()
+
+
+from analisis_plantillas_wip import sums_der as sums_der_actual, sums_izq as sums_izq_actual, filt_der as filt_der_actual, filt_izq as filt_izq_actual 
+
+
+# Asegurate de que ambas listas tengan la misma cantidad de pasadas
+num_pasadas = min(len(filt_der), len(filt_der_actual))
+
+# Iterar por pasada
+for i in range(num_pasadas):
+    df_ant = filt_der[i]
+    df_act = filt_der_actual[i]
+    
+    sensores = [col for col in df_ant.columns if col != 'Tiempo']
+    
+    fig, axes = plt.subplots(8, 1, figsize=(12, 20))  # 8 sensores → 8 subplots
+    fig.suptitle(f'Comparación PIE DERECHO - Pasada {i+1}', fontsize=16, y=1.02)
+    
+    for j, sensor in enumerate(sensores):
+        axes[j].plot(df_ant.index, df_ant[sensor], label='Procesado anterior', color='tab:blue')
+        axes[j].plot(df_act.index, df_act[sensor], label='Procesado actual', color='tab:orange', linestyle='--')
+        axes[j].set_title(f'Sensor {sensor}')
+        axes[j].legend()
+        axes[j].set_ylabel('KG')
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.6)
+    
+    
+    
+    # Para pie izquierdo
+num_pasadas_izq = min(len(filt_izq), len(filt_izq_actual))
+
+for i in range(num_pasadas_izq):
+    df_ant = filt_izq[i]
+    df_act = filt_izq_actual[i]
+    
+    sensores = [col for col in df_ant.columns if col != 'Tiempo']
+    
+    fig, axes = plt.subplots(8, 1, figsize=(12, 20))  # 8 sensores
+    fig.suptitle(f'Comparación PIE IZQUIERDO - Pasada {i+1}', fontsize=16, y=1.02)
+    
+    for j, sensor in enumerate(sensores):
+        axes[j].plot(df_ant.index, df_ant[sensor], label='Procesado anterior', color='tab:blue')
+        axes[j].plot(df_act.index, df_act[sensor], label='Procesado actual', color='tab:orange', linestyle='--')
+        axes[j].set_title(f'Sensor {sensor}')
+        axes[j].legend()
+        axes[j].set_ylabel('KG')
+    
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.6)
+    plt.show()
+
+
+# Asegurar que ambas listas tengan la misma cantidad de pasadas
+num_pasadas = min(len(sums_der), len(sums_der_actual))
+
+# Evitar errores si no hay datos
+if num_pasadas == 0:
+    print("No hay datos para comparar sums_der.")
+else:
+    fig, axes = plt.subplots(
+        nrows=num_pasadas,
+        ncols=1,
+        figsize=(10, num_pasadas * 3),
+        squeeze=False
+    )
+    axes = axes.flatten()
+
+    for i in range(num_pasadas):
+        df_ant = sums_der[i]
+        df_act = sums_der_actual[i]
+
+        # Asegurar formato DataFrame
+        df_ant = df_ant if isinstance(df_ant, pd.DataFrame) else df_ant.to_frame(name='suma')
+        df_act = df_act if isinstance(df_act, pd.DataFrame) else df_act.to_frame(name='suma')
+
+        df_ant.plot(ax=axes[i], label='Anterior', color='tab:blue')
+        df_act.plot(ax=axes[i], label='Actual', color='tab:orange', linestyle='--')
+
+        axes[i].set_title(f'Comparación SUMA Pie Derecho - Pasada {i+1}')
+        axes[i].set_xlabel('Tiempo')
+        axes[i].set_ylabel('Fuerza total (Kg)')
+        axes[i].legend()
+
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.5)
+    plt.show()
+
+
+
+num_pasadas = min(len(sums_izq), len(sums_izq_actual))
+
+if num_pasadas == 0:
+    print("No hay datos para comparar sums_izq.")
+else:
+    fig, axes = plt.subplots(
+        nrows=num_pasadas,
+        ncols=1,
+        figsize=(10, num_pasadas * 3),
+        squeeze=False
+    )
+    axes = axes.flatten()
+
+    for i in range(num_pasadas):
+        df_ant = sums_izq[i]
+        df_act = sums_izq_actual[i]
+
+        df_ant = df_ant if isinstance(df_ant, pd.DataFrame) else df_ant.to_frame(name='suma')
+        df_act = df_act if isinstance(df_act, pd.DataFrame) else df_act.to_frame(name='suma')
+
+        df_ant.plot(ax=axes[i], label='Anterior', color='tab:green')
+        df_act.plot(ax=axes[i], label='Actual', color='tab:red', linestyle='--')
+
+        axes[i].set_title(f'Comparación SUMA Pie Izquierdo - Pasada {i+1}')
+        axes[i].set_xlabel('Tiempo')
+        axes[i].set_ylabel('Fuerza total (Kg)')
+        axes[i].legend()
+
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0.5)
+    plt.show()
