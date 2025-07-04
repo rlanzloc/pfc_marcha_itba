@@ -20,6 +20,8 @@ import matplotlib.colors as mcolors
 from scipy.interpolate import interp1d
 from scipy.interpolate import PchipInterpolator
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.stats import beta
+from scipy.interpolate import UnivariateSpline
 
 plt.ioff() #si pones solo un plt.show() al final del codigo se abren todas las imagenes juntas
 
@@ -107,13 +109,20 @@ nombres_izq = [name for name in variables if "izquierda" in name.lower()]
 nombres_der = [name for name in variables if "derecha" in name.lower()]
 
 
-
-
-
-def suavizar_saturacion_df_spline_direccion(df, saturacion, margen=1, delta=2.0):
+'''def suavizar_saturacion_df_spline_direccion(df, saturacion, margen=1, delta=3.0):
     """
-    Suaviza mesetas saturadas y fuerza forma ascendente o descendente
-    según el sensor: S1–S4 (antepié) → ascendente; S5–S8 (retropié) → descendente.
+    Suaviza mesetas saturadas y fuerza forma plausible:
+      - S1–S4 (antepié): subida rápida hasta ~40%, pico en ~60% y bajada.
+      - S5–S8 (retropié): pico temprano (~25%) y caída.
+    
+    Args:
+        df (DataFrame): DataFrame con columnas por sensor.
+        saturacion (float): valor umbral de saturación.
+        margen (int): puntos adicionales antes/después del tramo saturado.
+        delta (float): cuánto ajustar el pico en kg.
+    
+    Retorna:
+        DataFrame suavizado.
     """
     df_out = df.copy()
 
@@ -124,11 +133,10 @@ def suavizar_saturacion_df_spline_direccion(df, saturacion, margen=1, delta=2.0)
         if not np.any(mask):
             continue
 
-        # Detectar sensor (S1, S2, ...)
-        sensor_name = col.split("_")[-1]  # 'Izquierda_S3' -> 'S3'
-        sensor_num = int(sensor_name[1:])  # 'S3' -> 3
+        # Identificar sensor (Ej: 'Pie_Izq_S3' -> 'S3')
+        sensor_name = col.split("_")[-1]
+        sensor_num = int(sensor_name[1:])
 
-        # Decidir forma
         es_antepie = sensor_num in [1, 2, 3, 4]
         es_retropie = sensor_num in [5, 6, 7, 8]
 
@@ -152,11 +160,124 @@ def suavizar_saturacion_df_spline_direccion(df, saturacion, margen=1, delta=2.0)
             y0 = serie.iloc[i0]
             y1 = serie.iloc[i1]
 
+            longitud = len(t_parche)
+
             if es_antepie:
-                y_mid = max(y0, y1) + delta  # Forzar ascendente
+                # Subida rápida hasta ~40%, pico en ~60%
+                i_subida = i0 + int(0.3 * longitud)
+                i_peak = i0 + int(0.7 * longitud)
+
+                # Validar índices
+                i_subida = min(max(i_subida, i0 + 1), i1 - 2)
+                i_peak = min(max(i_peak, i_subida + 1), i1 - 1)
+
+                t_subida = serie.index[i_subida]
+                t_peak = serie.index[i_peak]
+
+                y_subida = max(y0, y1) + delta / 2
+                y_peak = max(y0, y1) + delta
+                y_end = min(y0, y1)
+
+                x = [t_parche[0], t_subida, t_peak, t_parche[-1]]
+                y_vals = [y0, y_subida, y_peak, y_end]
+
+                # Fallback lineal si X no es creciente
+                if len(np.unique(x)) < len(x):
+                    x = [t_parche[0], t_parche[-1]]
+                    y_vals = [y0, y_end]
+
+            elif es_retropie:
+                # Pico temprano (~25%) y caída
+                i_peak = i0 + int(0.1* longitud)
+                i_peak = min(max(i_peak, i0 + 1), i1 - 1)
+                t_peak = serie.index[i_peak]
+
+                y_peak = max(y0, y1) + delta
+                y_end = min(y0, y1) - delta
+
+                x = [t_parche[0], t_peak, t_parche[-1]]
+                y_vals = [y0, y_peak, y_end]
+
+                if len(np.unique(x)) < len(x):
+                    x = [t_parche[0], t_parche[-1]]
+                    y_vals = [y0, y_end]
+
             else:
-                y_mid = (y0 + y1) / 2  # Default neutro
-            
+                # Neutro
+                i_peak = i0 + int(0.5 * longitud)
+                i_peak = min(max(i_peak, i0 + 1), i1 - 1)
+                t_peak = serie.index[i_peak]
+
+                y_peak = (y0 + y1) / 2
+                y_end = y1
+
+                x = [t_parche[0], t_peak, t_parche[-1]]
+                y_vals = [y0, y_peak, y_end]
+
+                if len(np.unique(x)) < len(x):
+                    x = [t_parche[0], t_parche[-1]]
+                    y_vals = [y0, y_end]
+
+            # Interpolación final robusta
+            interpolador = PchipInterpolator(x, y_vals)
+            serie_suave.loc[t_parche] = interpolador(t_parche)
+
+        df_out[col] = serie_suave
+
+    return df_out'''
+    
+
+def suavizar_saturacion_df_spline_direccion(df, margen=3, delta=2.0, saturacion = 25, lado='D'):
+    """
+    Suaviza mesetas que se quedan en el máximo local de cada sensor.
+    - Detecta saturación automática usando el máximo de la señal.
+    - S1–S4 (antepié) → forma ascendente
+    - S5–S8 (retropié) → forma descendente
+    """
+    df_out = df.copy()
+
+    for col in df.columns:
+        serie = df[col]
+        valor_max = serie.max()
+
+    
+        # Encontrar zonas donde se queda saturado
+        mask = serie >= saturacion
+
+        if not np.any(mask):
+            continue
+
+        # Identificar sensor
+        sensor_name = col.split("_")[-1]  # Ej: 'Izquierda_S3' → 'S3'
+        sensor_num = int(sensor_name[1:])
+
+        es_antepie = sensor_num in [1, 2, 3, 4]
+        es_retropie = sensor_num in [5, 6, 7,8]
+
+        diff = np.diff(mask.astype(int))
+        starts = np.where(diff == 1)[0] + 1
+        ends = np.where(diff == -1)[0] + 1
+
+        if mask.iloc[0]:
+            starts = np.insert(starts, 0, 0)
+        if mask.iloc[-1]:
+            ends = np.append(ends, len(serie))
+
+        serie_suave = serie.copy()
+
+        for s, e in zip(starts, ends):
+            i0 = max(s - margen, 0)
+            i1 = min(e + margen, len(serie) - 1)
+            idx_parche = np.arange(i0, i1 + 1)
+            t_parche = serie.index[idx_parche]
+
+            y0 = serie.iloc[i0]
+            y1 = serie.iloc[i1]
+
+            if es_antepie:
+                y_mid = max(y0, y1) + delta
+            '''elif es_retropie:
+                y_mid = min(y0, y1) - delta'''
 
             x = [t_parche[0], t_parche[len(t_parche)//2], t_parche[-1]]
             y = [y0, y_mid, y1]
@@ -167,6 +288,8 @@ def suavizar_saturacion_df_spline_direccion(df, saturacion, margen=1, delta=2.0)
         df_out[col] = serie_suave
 
     return df_out
+
+
 
 ################ PROCESAMIENTO BASE DE DATOS CRUDOS #######################
 
@@ -290,9 +413,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
     raw_der_final, valores_ausentes_der, muestras_totales_der = limpiar_tiempo_anomalo(raw_der, frecuencia_hz=100)
     raw_izq_final, valores_ausentes_izq, muestras_totales_izq = limpiar_tiempo_anomalo(raw_izq, frecuencia_hz=100)
     
-    print(valores_ausentes_der, muestras_totales_der)
-    print(valores_ausentes_izq, muestras_totales_izq)
-    
     dataframes_der, mV_der = preproc_df(raw_der_final)  # DataFrames de la derecha
     dataframes_izq, mV_izq = preproc_df(raw_izq_final)
 
@@ -309,6 +429,7 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
         # Aplicar el filtro a cada columna de sensores
         for column in df.columns:
             df_filtered[column] = apply_lowpass_filter(df[column], cutoff_frequency, sampling_rate)
+            #df_filtered[column] = np.clip(df[column], 0, 25)
 
         lowpass_der.append(df_filtered)
 
@@ -319,44 +440,41 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
         # Aplicar el filtro a cada columna de sensores
         for column in df.columns:
             df_filtered[column] = apply_lowpass_filter(df[column], cutoff_frequency, sampling_rate)
+            #df_filtered[column] = np.clip(df[column], 0, 25)
 
         lowpass_izq.append(df_filtered)
 
     # Parámetros del filtro Savitzky-Golay
     window_length = 11  # Tamaño de la ventana del filtro (debe ser un número impar)
-    polyorder = 3       # Orden del polinomio usado en el filtro
+    polyorder = 3    # Orden del polinomio usado en el filtro
 
     filt_der = []
     filt_izq = []
 
-    saturacion_valor = 25.9  # Valor máximo real para detectar meseta
-
     # === Pie IZQUIERDO: spline primero, luego filtro ===
     for df in dataframes_izq:
         # 1️⃣ Suavizar mesetas de saturación con spline
-        df_suave = suavizar_saturacion_df_spline_direccion(df, saturacion=saturacion_valor, margen=1, delta=3.0)
+        df_suave = suavizar_saturacion_df_spline_direccion(df, margen=2, delta=3, saturacion = 25, lado='I')
         
         # 2️⃣ Filtro Savitzky-Golay después para suavizar todo
         df_filtered = df_suave.copy()
         for column in df_filtered.columns:
             df_filtered[column] = savgol_filter(df_filtered[column], window_length=window_length, polyorder=polyorder)
-            df_filtered[column] = np.maximum(df_filtered[column], 0)
-
+        
         filt_izq.append(df_filtered)
 
     # === Pie DERECHO: spline primero, luego filtro ===
     for df in dataframes_der:
         # 1️⃣ Suavizar mesetas de saturación con spline
-        df_suave = suavizar_saturacion_df_spline_direccion(df, saturacion=saturacion_valor, margen=1, delta=2.0)
+        df_suave = suavizar_saturacion_df_spline_direccion(df, margen=1, delta=1, saturacion = 25, lado='D')
         
         # 2️⃣ Filtro Savitzky-Golay después para suavizar todo
         df_filtered = df_suave.copy()
         for column in df_filtered.columns:
             df_filtered[column] = savgol_filter(df_filtered[column], window_length=window_length, polyorder=polyorder)
-            df_filtered[column] = np.maximum(df_filtered[column], 0)
 
         filt_der.append(df_filtered)
-
+        
     # === Sumas finales ===
     sums_der = []
     sums_izq = []
@@ -380,7 +498,7 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
 #DATAFRAMES: 8 sensores en kg antes del filtrado
 #mV: 8 sensores en mV
 
-filt_der, filt_izq, sums_der, sums_izq, dataframes_der, dataframes_izq, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq)
+filt_der, filt_izq, sums_der, sums_izq, dataframes_der, lowpass_izq, mV_der, mV_izq = procesar_plantillas(raw_der, raw_izq)
 
 
 ######### CORRECCION DE DESFASAJE ENTRE IZQ Y DER ###########
@@ -494,9 +612,10 @@ filt_izq, offsets_sens_izq = correccion_baseline_general(filt_izq, modo='sensore
 sums_der, offsets_sum_der= correccion_baseline_general(sums_der, modo='suma')
 sums_izq, offsets_sum_izq = correccion_baseline_general(sums_izq, modo='suma')
 
-# GRÁFICOS FILT (kg)
+
+'''# GRÁFICOS FILT (kg)
 # Pie DERECHO 
-der = mV_der
+der = filt_der
 if len(der) == 0:
     print("No hay datos de PIE DERECHO para graficar.")
 else:
@@ -514,8 +633,8 @@ else:
     
     plt.tight_layout()
     plt.subplots_adjust(hspace=0.4)
-   
-izq = mV_izq
+
+izq = lowpass_izq
 # Pie IZQUIERDO 
 if len(izq) == 0:
     print("No hay datos de PIE IZQUIERDO para graficar.")
@@ -533,33 +652,46 @@ else:
         axes[i].legend()
     
     plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)
+    plt.subplots_adjust(hspace=0.4)'''
     
 
 def segmentar_ciclos_vgrf_desde_picos(series_list,
                                       frecuencia_hz=100,
-                                      subida_minima=3,
+                                      subida_minima=5,
                                       ventana_retroceso_s=0.4,
                                       peso_maximo=5,
                                       min_separacion_s=0.7,
                                       min_prominence_factor=0.01,
                                       min_peak_height=0.07,
-                                      threshold_ratio=0.03):
+                                      threshold_ratio=0.03,
+                                      filt_list=None,
+                                      lado='I',
+                                      aporte_max_rel=0.03):
     """
-    Detección de mínimos válidos (contacto inicial) y segmentación de ciclos de marcha,
-    combinando cambio de pendiente (derivada) + validación de subida posterior,
-    y barrido de rescate para zonas sin mínimos claros.
+    Detecta mínimos y segmenta ciclos de marcha.
+    Para cada sensor ajusta su nivel para que el aporte relativo en la región no válida sea ≤ aporte_max_rel.
+    Limita además la distancia máxima permitida entre CI y su pico asociado.
     """
     min_indices_all = []
     min_tiempos_all = []
     ciclos_apoyo_all = []
     indices_apoyo_all = []
     ciclos_completos_all = []
+    suma_corregida_all = []
+    filt_corr_list = []
 
     ventana_retroceso = int(ventana_retroceso_s * frecuencia_hz)
     min_separacion = int(min_separacion_s * frecuencia_hz)
+    max_dist_pico_CI = int(0.6 * frecuencia_hz)  # Máx distancia CI–pico: 0.5 s
 
-    for serie in series_list:
+    if lado == 'I':
+        sensores = [f'Izquierda_S{i}' for i in range(1, 9)]
+    elif lado == 'D':
+        sensores = [f'Derecha_S{i}' for i in range(1, 9)]
+    else:
+        raise ValueError("El parámetro 'lado' debe ser 'I' o 'D'.")
+
+    for i_passada, serie in enumerate(series_list):
         y = serie.values.ravel()
         tiempos = np.array(serie.index)
         dy = np.diff(y, prepend=y[0])
@@ -568,13 +700,14 @@ def segmentar_ciclos_vgrf_desde_picos(series_list,
         min_prominence = max_val * min_prominence_factor
         min_height = max_val * min_peak_height
 
-        peaks, props = find_peaks(y, prominence=min_prominence, height=min_height)
-        #print(f"[INFO] Detectados {len(peaks)} picos.")
+        peaks, _ = find_peaks(y, prominence=min_prominence, height=min_height)
 
         min_indices = []
 
         for pico in peaks:
             ini = max(0, pico - ventana_retroceso)
+            min_ini = max(0, pico - max_dist_pico_CI)
+            #ini = max(ini, min_ini)  # Aplica restricción de distancia
             fin = pico
 
             encontrado = False
@@ -583,16 +716,16 @@ def segmentar_ciclos_vgrf_desde_picos(series_list,
                     if y[idx] < peso_maximo:
                         subida = y[pico] - y[idx]
                         if subida >= subida_minima:
-                            if len(min_indices) == 0 or (idx - min_indices[-1]) >= min_separacion:
-                                min_indices.append(idx)
-                                encontrado = True
-                                tiempo_minimo = tiempos[idx]
-                                #print(f"[OK] Mínimo desde pico {pico} en idx={idx}, tiempo={tiempo_minimo} subida={subida:.2f}")
-                                break
+                            if (pico - idx) <= max_dist_pico_CI:
+                                if len(min_indices) == 0 or (idx - min_indices[-1]) >= min_separacion:
+                                    min_indices.append(idx)
+                                    encontrado = True
+                                    break
 
             if not encontrado:
-                nueva_ventana = int(0.6 * frecuencia_hz)
+                nueva_ventana = int(0.5 * frecuencia_hz)
                 ini_rescate = max(0, pico - nueva_ventana)
+                ini_rescate = max(ini_rescate, min_ini)  # Aplica restricción en rescate
                 fin_rescate = fin
                 dy_rescate = np.diff(y[ini_rescate:fin_rescate], prepend=y[ini_rescate])
 
@@ -601,68 +734,170 @@ def segmentar_ciclos_vgrf_desde_picos(series_list,
                         idx_rescate = ini_rescate + j
                         subida = y[pico] - y[idx_rescate]
                         if y[idx_rescate] < peso_maximo and subida >= subida_minima:
-                            if len(min_indices) == 0 or (idx_rescate - min_indices[-1]) >= min_separacion:
-                                min_indices.append(idx_rescate)
-                                tiempo_rescate = tiempos[idx_rescate]
-                                #print(f"[RESCATE OK] Derivada idx={idx_rescate}, tiempo={tiempo_rescate} subida={subida:.2f}")
-                                break
+                            if (pico - idx_rescate) <= max_dist_pico_CI:
+                                if len(min_indices) == 0 or (idx_rescate - min_indices[-1]) >= min_separacion:
+                                    min_indices.append(idx_rescate)
+                                    break
 
         min_indices = sorted(set(min_indices))
         min_tiempos = tiempos[min_indices]
         min_indices_all.append(min_indices)
         min_tiempos_all.append(min_tiempos)
 
-        ### --- Segmentar ciclos ---
         ciclos_apoyo = []
         indices_apoyo = []
         ciclos_completos = []
 
+        df_passada = filt_list[i_passada].copy() if filt_list is not None else None
+
         for i in range(len(min_indices) - 1):
             idx_ini = min_indices[i]
             idx_fin = min_indices[i + 1]
-            ciclo_completo = serie.iloc[idx_ini:idx_fin]
-            ciclos_completos.append(ciclo_completo)
 
-            datos = ciclo_completo.values.ravel()
-            max_valor = datos.max()
-            threshold = threshold_ratio * max_valor
-            indices_validos = np.where(datos > threshold)[0]
+            y_segmento = y[idx_ini:idx_fin]
+            peaks_ciclo, _ = find_peaks(y_segmento, prominence=min_prominence, height=min_height)
 
-            if len(indices_validos) > 0:
-                rel_fin = indices_validos[-1]
-
-                # Protege: si queda igual
-                if rel_fin == 0:
-                    rel_fin = 1
-                if rel_fin > len(ciclo_completo):
-                    rel_fin = len(ciclo_completo)
-
-                apoyo = ciclo_completo.iloc[:rel_fin]
-                if len(apoyo) == 0:
-                    apoyo = ciclo_completo
-
-                t_ini = apoyo.index[0]
-                t_fin = apoyo.index[-1]
+            if len(peaks_ciclo) >= 1:
+                idx_rel_pico1 = peaks_ciclo[0]
+                idx_pico1 = idx_ini + idx_rel_pico1
             else:
-                apoyo = ciclo_completo
-                t_ini = ciclo_completo.index[0]
-                t_fin = ciclo_completo.index[-1]
+                idx_pico1 = idx_ini + int((idx_fin - idx_ini) * 0.3)
 
-            ciclos_apoyo.append(apoyo)
-            indices_apoyo.append((t_ini, t_fin))
+            if len(peaks_ciclo) >= 2:
+                idx_rel_pico2 = peaks_ciclo[1]
+                idx_pico2 = idx_ini + idx_rel_pico2
+            else:
+                idx_pico2 = idx_ini + int((idx_fin - idx_ini) * 0.7)
+
+            if df_passada is not None:
+                for sensor in sensores:
+                    sensor_num = int(sensor.split('_')[-1][1:])
+
+                    if sensor_num in [1, 2, 3, 4]:
+                        reg_ini = idx_ini
+                        reg_fin = idx_pico1
+                    elif sensor_num in [5, 6, 7, 8]:
+                        reg_ini = idx_pico2
+                        reg_fin = idx_fin
+                    else:
+                        continue
+
+                    aporte = df_passada[sensor].iloc[reg_ini:reg_fin].mean()
+                    suma_total = df_passada[sensores].iloc[reg_ini:reg_fin].sum(axis=1).mean()
+
+                    aporte_rel = aporte / suma_total if suma_total > 0 else 0
+                    if aporte_rel > aporte_max_rel:
+                        aporte_deseado = aporte_max_rel * suma_total
+                        factor = aporte_deseado / aporte if aporte > 0 else 1
+                        desplazamiento = aporte * (1 - factor)
+
+                        corregido = (df_passada[sensor].iloc[idx_ini:idx_fin] - desplazamiento).clip(lower=0)
+                        df_passada.loc[df_passada.index[idx_ini:idx_fin], sensor] = corregido
+
+                suma_ciclo = df_passada[sensores].iloc[idx_ini:idx_fin].sum(axis=1).to_frame()
+                ciclo_completo = suma_ciclo
+
+                datos = ciclo_completo.values.ravel()
+                max_valor = datos.max()
+                threshold = threshold_ratio * max_valor
+                indices_validos = np.where(datos > threshold)[0]
+
+                if len(indices_validos) > 0:
+                    rel_fin = indices_validos[-1]
+
+                    if rel_fin == 0:
+                        rel_fin = 1
+
+                    idx_fin_apoyo = idx_ini + rel_fin
+
+                    # SOLO aplica recorte por subida máxima si está después del 2do pico
+                    if idx_fin_apoyo > idx_pico2:
+                        ventana_chequeo = int(0.05 * frecuencia_hz)  # 50 ms
+                        subida_maxima = 3  # por ejemplo
+
+                        while rel_fin > ventana_chequeo:
+                            idx_actual = rel_fin
+                            idx_prev = rel_fin - ventana_chequeo
+                            subida = datos[idx_actual] - datos[idx_prev]
+
+                            if subida >= subida_maxima:
+                                # Subida grande => todavía estás en apoyo => retrocede más
+                                rel_fin = idx_prev
+                            else:
+                                # Subida pequeña => señal plana => corto aquí
+                                break
+
+                    if rel_fin > (idx_fin - idx_ini):
+                        rel_fin = idx_fin - idx_ini
+
+                    apoyo = ciclo_completo.iloc[:rel_fin]
+                    if len(apoyo) == 0:
+                        apoyo = ciclo_completo
+
+                    t_ini = apoyo.index[0]
+                    t_fin = apoyo.index[-1]
+
+                else:
+                    apoyo = ciclo_completo
+                    t_ini = ciclo_completo.index[0]
+                    t_fin = ciclo_completo.index[-1]
+
+                ciclos_completos.append(ciclo_completo)
+                ciclos_apoyo.append(apoyo)
+                indices_apoyo.append((t_ini, t_fin))
+
+        if df_passada is not None:
+            suma_corregida = df_passada[sensores].sum(axis=1).to_frame()
+            suma_corregida_all.append(suma_corregida)
+            filt_corr_list.append(df_passada)
 
         ciclos_apoyo_all.append(ciclos_apoyo)
         indices_apoyo_all.append(indices_apoyo)
         ciclos_completos_all.append(ciclos_completos)
 
+    return (
+        min_indices_all,
+        min_tiempos_all,
+        ciclos_apoyo_all,
+        indices_apoyo_all,
+        ciclos_completos_all,
+        suma_corregida_all,
+        filt_corr_list
+    )
 
-    return min_indices_all, min_tiempos_all, ciclos_apoyo_all, indices_apoyo_all, ciclos_completos_all
 
 
-min_indices_der, min_tiempos_der, ciclos_der, indices_apoyo_der, ciclos_completos_der = segmentar_ciclos_vgrf_desde_picos(sums_der, threshold_ratio=0.04)
 
-# Para el pie izquierdo
-min_indices_izq, min_tiempos_izq, ciclos_izq, indices_apoyo_izq, ciclos_completos_izq = segmentar_ciclos_vgrf_desde_picos(sums_izq, threshold_ratio=0.04)
+min_indices_izq, min_tiempos_izq, ciclos_izq, indices_apoyo_izq, ciclos_completos_izq, sums_izq, filt_izq = segmentar_ciclos_vgrf_desde_picos(
+    sums_izq,
+    subida_minima=5,
+    ventana_retroceso_s=0.4,
+    peso_maximo=5,
+    min_separacion_s=0.7,
+    min_prominence_factor=0.03,
+    min_peak_height=0.07,
+    threshold_ratio=0.04,
+    filt_list=filt_izq, 
+    lado='I',
+    aporte_max_rel=0.03)
+
+
+min_indices_der, min_tiempos_der, ciclos_der, indices_apoyo_der, ciclos_completos_der, sums_der, filt_der = segmentar_ciclos_vgrf_desde_picos(
+    sums_der,
+    subida_minima=5,
+    ventana_retroceso_s=0.4,
+    peso_maximo=5,
+    min_separacion_s=0.7,
+    min_prominence_factor=0.03,
+    min_peak_height=0.07,
+    threshold_ratio=0.04,
+    filt_list=filt_der, 
+    lado='D',
+    aporte_max_rel=0.03)
+
+
+
+
 
 
 ############## DETECCIÓN DE PICOS Y VALLES EN CADA CICLO, CLASIFICACIÓN DE VÁLIDOS/INVÁLIDOS ########################
@@ -670,7 +905,8 @@ def improved_vGRF_detection(ciclos_por_pasada, indices_por_pasada, ciclos_comple
                                 time_threshold=0.5, 
                                 min_prominence_factor=0.05,
                                 min_peak_height=0.1,
-                                support_ratio_threshold=(0.60, 0.78)):
+                                support_ratio_threshold=(0.60, 0.78), 
+                                peso_kg = 52):
     """
     Detección de patrones vGRF usando ciclos ya recortados, con evaluación de proporción de fase de apoyo.
 
@@ -712,11 +948,10 @@ def improved_vGRF_detection(ciclos_por_pasada, indices_por_pasada, ciclos_comple
                 peaks, props = find_peaks(y, prominence=min_prominence, height=min_height)
                 valleys, _ = find_peaks(-y, prominence=min_prominence)
 
-                # --- FILTRO: solo valles mayores a 30 kg ---
                 valleys_filtrados = []
                 for v in valleys:
                     valor_valle = y[v]
-                    if valor_valle >= 30:
+                    if valor_valle >= peso_kg*0.60:
                         valleys_filtrados.append(v)
 
                 is_valid = True
@@ -729,6 +964,13 @@ def improved_vGRF_detection(ciclos_por_pasada, indices_por_pasada, ciclos_comple
                 if len(peaks) < 2:
                     is_valid = False
                     razones.append(f"Solo {len(peaks)} pico(s)")
+                
+                if len(peaks) >= 2:
+                    primer_pico = y[peaks[0]]
+                    segundo_pico = y[peaks[1]]
+                    if primer_pico < peso_kg or segundo_pico < peso_kg:
+                        is_valid = False
+                        razones.append("Pico(s) menor al peso")
 
                 if len(valleys_filtrados) < 1:
                     is_valid = False
@@ -784,12 +1026,16 @@ results_der = improved_vGRF_detection(ciclos_der, indices_apoyo_der, ciclos_comp
                                         time_threshold=0.5,  # Aumentar para permitir más variación en duración
                                         min_prominence_factor=0.05,  # Reducir para detectar picos menos prominentes
                                         min_peak_height=0.1, # Reducir para incluir picos más pequeños
-                                        support_ratio_threshold=(0.60, 0.78)) 
+                                        support_ratio_threshold=(0.60, 0.80),
+                                        peso_kg=52) 
 results_izq = improved_vGRF_detection(ciclos_izq, indices_apoyo_izq, ciclos_completos_izq,
                                         time_threshold=0.5,  
                                         min_prominence_factor=0.05,                                          
                                         min_peak_height=0.1,
-                                        support_ratio_threshold=(0.60, 0.78)) 
+                                        support_ratio_threshold=(0.60, 0.80),
+                                        peso_kg=52) 
+
+
 
 
 def plot_with_diagnosis(senales_completas, results, indices_ciclos, min_tiempos=None):
@@ -962,7 +1208,7 @@ def plot_izquierda_derecha(sums_der_subset, sums_izq_subset,
         ax.legend()
         plt.tight_layout()
 
-plot_izquierda_derecha(
+'''plot_izquierda_derecha(
     sums_der,
     sums_izq,
     min_indices_der,
@@ -970,7 +1216,7 @@ plot_izquierda_derecha(
     results_der,
     results_izq
 )
-
+'''
 
 ############### CORRECCIÓN y GRAFICO DE SENSORES Y CURVA vGRF ################
 def graficar_suma_por_fases_normalizada(
@@ -1013,9 +1259,7 @@ def graficar_suma_por_fases_normalizada(
             inicio, fin = indices_ciclo[0], indices_ciclo[1]
             datos_ciclo = df_sensores.loc[inicio:fin].copy()
 
-            datos_ciclo_corr, _ = correccion_baseline_general(
-                datos_ciclo.sum(axis=1).to_frame(), modo='suma')
-            suma_total = datos_ciclo_corr.iloc[:, 0] / peso_kg
+            suma_total = datos_ciclo.sum(axis=1).to_frame().iloc[:, 0] / peso_kg
 
             peaks = ciclo_info['peaks']
             valleys = ciclo_info['valleys']
@@ -1123,6 +1367,8 @@ promedio_der, metricas_der, tabla_der = graficar_suma_por_fases_normalizada(
 promedio_izq, metricas_izq, tabla_izq = graficar_suma_por_fases_normalizada(
     filt_izq, results_izq, indices_apoyo_izq, lado="L")
 
+
+
 def plot_promedios_comparados(promedios_list, lado="R"):
     """
     Grafica todos los promedios de ciclo de apoyo de una pierna en un mismo gráfico.
@@ -1145,11 +1391,13 @@ def plot_promedios_comparados(promedios_list, lado="R"):
     plt.legend()
     plt.tight_layout()
     
-'''plot_promedios_comparados(promedio_der, lado="R")
+plot_promedios_comparados(promedio_der, lado="R")
 plot_promedios_comparados(promedio_izq, lado="L")
-'''
+
+plt.show()
+
 #plt.close('all')
-#plt.show()
+
 
 
 # === Coordenadas de sensores ===
@@ -1257,7 +1505,7 @@ def calcular_COP_normalizado_todas_pasadas(
     return copx_todas, copy_todas
 
 
-# === Calcular COP ===
+'''# === Calcular COP ===
 copx_izq_all, copy_izq_all = calcular_COP_normalizado_todas_pasadas(
     filt_izq, sums_izq, coord_df_izq,
     indices_apoyo_izq, [[d['is_valid'] for d in res['details']] for res in results_izq],
@@ -1268,16 +1516,16 @@ copx_der_all, copy_der_all = calcular_COP_normalizado_todas_pasadas(
     filt_der, sums_der, coord_df_der,
     indices_apoyo_der, [[d['is_valid'] for d in res['details']] for res in results_der],
     lado='R'
-)
+)'''
 
 # === Config común ===
-pies = ['Izquierdo', 'Derecho']
+'''pies = ['Izquierdo', 'Derecho']
 coord_dfs = [coord_df_izq, coord_df_der]
 sensor_colores = ['blue', 'yellow', 'grey', 'pink', 'green', 'orange', 'purple', 'red']
 colores = plt.colormaps['tab10']
 margen = 20
 
-'''# === Recorre todas las pasadas ===
+# === Recorre todas las pasadas ===
 for pasada_idx, (copx_izq, copy_izq, copx_der, copy_der) in enumerate(zip(copx_izq_all, copy_izq_all, copx_der_all, copy_der_all)):
 
     fig, axes = plt.subplots(1, 2, figsize=(16, 8))
@@ -1319,15 +1567,21 @@ for pasada_idx, (copx_izq, copy_izq, copx_der, copy_der) in enumerate(zip(copx_i
         ax.grid(True)
         ax.legend()
 
-    plt.tight_layout()
-    plt.show()
-    '''
-    
-def graficar_promedio_por_pie(filt_df, results, coord_sensores, pie="Derecho"):
+    plt.tight_layout()'''
+
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy.interpolate import splprep, splev
+from matplotlib import cm
+
+
+def graficar_promedio_por_pie(filt_df_list, results, coord_sensores, pie="Derecho"):
     fases = ["loading_response", "midstance", "terminal_stance", "pre_swing"]
     acumulador = {fase: [] for fase in fases}
 
-    for resultado in results:
+    for resultado, pasada_df in zip(results, filt_df_list):
         for detalle in resultado["details"]:
             if not detalle["is_valid"]:
                 continue
@@ -1346,7 +1600,7 @@ def graficar_promedio_por_pie(filt_df, results, coord_sensores, pie="Derecho"):
                 pico1 = float(peaks[0])
                 valle = float(valleys[0])
                 pico2 = float(peaks[1])
-            except Exception as e:
+            except Exception:
                 continue
 
             segmentos = {
@@ -1357,234 +1611,191 @@ def graficar_promedio_por_pie(filt_df, results, coord_sensores, pie="Derecho"):
             }
 
             for fase, (t0, t1) in segmentos.items():
-                segmento_df = filt_df[(filt_df.index >= t0) & (filt_df.index <= t1)]
+                segmento_df = pasada_df[(pasada_df.index >= t0) & (pasada_df.index <= t1)]
                 sumas = segmento_df.sum()
                 total = sumas.sum()
                 if total > 0:
                     porcentajes = (sumas / total * 100)
                     acumulador[fase].append(porcentajes)
 
-    # Promediar por fase
     promedio_fases = {
-        fase: pd.concat(valores, axis=1).mean(axis=1) if valores else pd.Series([0]*8, index=filt_df.columns)
+        fase: pd.concat(valores, axis=1).mean(axis=1) if valores else pd.Series([0]*8, index=filt_df_list[0].columns)
         for fase, valores in acumulador.items()
     }
 
-    # Graficar
+    max_global = max([p.max() for p in promedio_fases.values()])
+
+    sensores = promedio_fases[fases[0]].index
+    sensor_id = lambda s: s.replace("Derecha_", "").replace("Izquierda_", "")
+
+    x = np.array([coord_sensores.loc[sensor_id(s), "X"] for s in sensores])
+    y = np.array([coord_sensores.loc[sensor_id(s), "Y"] for s in sensores])
+
+    xc, yc = np.mean(x), np.mean(y)
+    angles = np.arctan2(y - yc, x - xc)
+    sorted_idx = np.argsort(angles)
+
+    x_sorted = x[sorted_idx]
+    y_sorted = y[sorted_idx]
+    sensores_sorted = [sensores[i] for i in sorted_idx]
+
+    x_offset, y_offset = [], []
+
+    for xi, yi, sensor in zip(x_sorted, y_sorted, sensores_sorted):
+        sensor_num = int(sensor.split('_')[-1][1:])
+
+        offset_x, offset_y = 0, 0
+
+        if sensor_num in [6, 7, 8]:
+            offset_x = 0
+            offset_y = -20  # retropié fuerte hacia atrás
+        elif sensor_num == 5:
+            offset_x = 10
+            offset_y = -20  # midfoot: leve, si querés ajustar
+        else:
+            # Antepié: offset radial normal
+            r = np.sqrt((xi - xc)**2 + (yi - yc)**2)
+            dx = (xi - xc) / r if r != 0 else 0
+            dy = (yi - yc) / r if r != 0 else 0
+            offset_x = dx * 5
+            offset_y = dy * 15
+
+        x_offset.append(xi + offset_x)
+        y_offset.append(yi + offset_y)
+
+    x_closed = np.append(x_offset, x_offset[0])
+    y_closed = np.append(y_offset, y_offset[0])
+
+    tck, u = splprep([x_closed, y_closed], s=0, per=True)
+    unew = np.linspace(0, 1.0, 200)
+    out = splev(unew, tck)
+
     fig = plt.figure(figsize=(20, 5))
     fig.suptitle(f"Aporte promedio por sensor - Pie {pie}", fontsize=16)
     fig.patch.set_facecolor("white")
-    
+
+    cmap = cm.get_cmap('jet')
 
     for i, fase in enumerate(fases, 1):
         porcentajes = promedio_fases[fase]
         sensores = porcentajes.index
-        sensor_id = lambda s: s.replace("Derecha_", "").replace("Izquierda_", "")
-        x = [coord_sensores.loc[sensor_id(s), "X"] for s in sensores]
-        y = [coord_sensores.loc[sensor_id(s), "Y"] for s in sensores]
+        x_barras = [coord_sensores.loc[sensor_id(s), "X"] for s in sensores]
+        y_barras = [coord_sensores.loc[sensor_id(s), "Y"] for s in sensores]
         z = [0] * len(sensores)
         dz = [porcentajes[s] for s in sensores]
-        
 
+        colors = [cmap(min(d/max_global, 1.0)) for d in dz]
 
         ax = fig.add_subplot(1, 4, i, projection='3d')
-        ax.bar3d(x, y, z, dx=5, dy=5, dz=dz, shade=True)
+        ax.bar3d(x_barras, y_barras, z, dx=5, dy=5, dz=dz, color=colors, shade=True)
 
-        # Estética
+        ax.plot(out[0], out[1], zs=0, zdir='z', color='k', lw=1.5, alpha=0.7)
+
         ax.set_facecolor("white")
-        ##ax.set_axis_off()   si quiero apagar todo
         ax.grid(False)
-        ax.xaxis.line.set_color((1, 1, 1, 0))  # línea eje X
-        ax.yaxis.line.set_color((1, 1, 1, 0))  # línea eje Y
-        ax.zaxis.line.set_color((1, 1, 1, 0))  # línea eje Z
-        
-        ax.xaxis.pane.set_facecolor((1.0, 1.0, 1.0, 1.0))  # XY plane (suelo)
+        ax.xaxis.line.set_color((1, 1, 1, 0))
+        ax.yaxis.line.set_color((1, 1, 1, 0))
+        ax.zaxis.line.set_color((1, 1, 1, 0))
+        ax.xaxis.pane.set_facecolor((1.0, 1.0, 1.0, 1.0))
         ax.yaxis.pane.set_facecolor((1.0, 1.0, 1.0, 0.0))
-        ax.zaxis.pane.set_facecolor((1.0, 1.0, 1.0, 0.0)) 
-        
+        ax.zaxis.pane.set_facecolor((1.0, 1.0, 1.0, 0.0))
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_zticks([])
-        ax.set_xlabel("")
-        ax.set_ylabel("")
-        ax.set_zlabel("")
-
-        # Etiquetas sobre cada barra
-        for xi, yi, zi in zip(x, y, dz):
-            ax.text(xi, yi, zi + 2, f"{zi:.1f}%", fontsize=5, ha='left', va='bottom')
-
-
-        ax.set_xlim(-70, 120) 
+        ax.set_xlim(-70, 120)
         ax.set_ylim(-35, 155)
-        ax.set_zlim(0, 60)
-       
-
+        ax.set_zlim(0, max_global * 1.2)
         ax.set_title(fase.replace("_", " ").title())
-  
+
+        for xi, yi, zi in zip(x_barras, y_barras, dz):
+            ax.text(xi, yi, zi + 2, f"{zi:.1f}%", fontsize=5, ha='left', va='bottom')
 
     plt.tight_layout()
     plt.show()
 
 
-graficar_promedio_por_pie(filt_der[0], results_der, coord_sensores, pie="Derecho")
-graficar_promedio_por_pie(filt_izq[0], results_izq, coord_sensores, pie="Izquierdo")
+
+'''graficar_promedio_por_pie(filt_der, results_der, coord_sensores, pie="Derecho")
+graficar_promedio_por_pie(filt_izq, results_izq, coord_sensores, pie="Izquierdo")'''
 
 
-def graficar_suma_por_fases_con_sensores_v2(df_sensores, resultados, indices_ciclos, lado="R"):
-
+def graficar_suma_por_fases_con_sensores_v2(filt_list, results_list, indices_ciclos_list, lado="R"):
+    """
+    Para cada pasada:
+    - Muestra la suma por fases coloreadas.
+    - Muestra cada sensor individual.
+    """
     sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
 
-    for ciclo_info, indices_ciclo in zip(resultados[0]['details'], indices_ciclos[0]):
-        if not ciclo_info['is_valid']:
-            continue
-
-        inicio, fin = indices_ciclo[0], indices_ciclo[1]
-        datos_ciclo = df_sensores.loc[inicio:fin].copy()
-        suma_total = datos_ciclo.sum(axis=1)
-
-        peaks = ciclo_info['peaks']
-        valleys = ciclo_info['valleys']
+    for i_passada, (df_sensores, resultados, indices_ciclos) in enumerate(zip(filt_list, results_list, indices_ciclos_list)):
         
-        if len(peaks) < 2 or len(valleys) < 1:
-            print(f"Ciclo {ciclo_info['cycle_num']}: No hay suficientes picos/valles para definir fases.")
-            continue
+        for ciclo_info, indices_ciclo in zip(resultados['details'], indices_ciclos):
+            if not ciclo_info['is_valid']:
+                continue
 
-        p1, p2 = peaks[0], peaks[1]
-        v = valleys[0]
+            inicio, fin = indices_ciclo[0], indices_ciclo[1]
+            datos_ciclo = df_sensores.loc[inicio:fin].copy()
+            suma_total = datos_ciclo.sum(axis=1)
 
-        segmentos = {
-            'loading_response': (inicio, p1),
-            'midstance':        (p1, v),
-            'terminal_stance':  (v,  p2),
-            'pre_swing':        (p2, fin)
-        }
+            peaks = ciclo_info['peaks']
+            valleys = ciclo_info['valleys']
+            
+            if len(peaks) < 2 or len(valleys) < 1:
+                print(f"[Pasada {i_passada+1}] Ciclo {ciclo_info['cycle_num']}: Faltan picos/valles.")
+                continue
 
-        colores_fases = {
-            'loading_response': 'red',
-            'midstance': 'green',
-            'terminal_stance': 'blue',
-            'pre_swing': 'orange'
-        }
+            p1, p2 = peaks[0], peaks[1]
+            v = valleys[0]
 
-        '''sensores_por_fase = {
-            "loading_response": [f"{sufijo}_S5", f"{sufijo}_S6", f"{sufijo}_S7", f"{sufijo}_S8"], #ACA CAMBIAMOS SEGUN LOS SENSORES QUE TERMINEMOS ELIGIENDO
-            "midstance": list(datos_ciclo.columns),
-            "terminal_stance": list(datos_ciclo.columns),
-            "pre_swing": [f"{sufijo}_S1", f"{sufijo}_S2", f"{sufijo}_S3", f"{sufijo}_S4"]
-        }
-        
-        # Preparar estructura para datos reescalados
-        datos_reescalados = {
-            'suma_total_original': suma_total.copy(),
-            'suma_reescalada': pd.Series(0, index=datos_ciclo.index),
-            'fases': {},
-            'picos_valores_reescalados': {'p1': None, 'p2': None},
-            'valle_valor_reescalado': None,
-            'indices_originales': {'p1': p1, 'p2': p2, 'valle': v}
-        }
-
-        suma_reescalada = pd.Series(np.zeros(len(datos_ciclo)), index=datos_ciclo.index, dtype=float)
-        fase_sumas = {}
-
-        for fase, (start, end) in segmentos.items():
-            sensores_fase = sensores_por_fase.get(fase, [])
-            datos_fase = datos_ciclo.loc[start:end].copy()
-
-            if fase in ["loading_response", "pre_swing"]:
-                sensores_no_principales = [s for s in datos_fase.columns if s not in sensores_fase]
-
-                # Restar el aporte de sensores no principales frame a frame RESTA TODOO EL APORTE, SE PUEDE PONER PARA QUE RESTE UN % NOMAS
-                aporte_no_principales = datos_fase[sensores_no_principales].sum(axis=1)
-                suma_fase = datos_fase.sum(axis=1) - aporte_no_principales
-            else:
-                # Fases centrales: se usa todo directamente
-                suma_fase = datos_fase.sum(axis=1)
-
-            suma_reescalada.loc[start:end] = suma_fase.values
-            fase_sumas[fase] = suma_fase
-
-            datos_reescalados['fases'][fase] = {
-                'start': start,
-                'sensores_principales': sensores_fase,
-                'sensores_escalados': [s for s in datos_fase.columns if s not in sensores_fase],
-                'suma_fase': suma_fase.copy(),
-                'datos_sensores': datos_fase.copy()
+            segmentos = {
+                'loading_response': (inicio, p1),
+                'midstance':        (p1, v),
+                'terminal_stance':  (v,  p2),
+                'pre_swing':        (p2, fin)
             }
 
-        # CALCULO OFFSET ENTRE EL ULTIMO VALOR DE UNA FASE Y EL INICIO DE OTRA, PARA DESPLAZAR VERTICALMENTE
-        # LOADING RESPONSE Y PRE-SWING NO SE DEBEN DESPLAZAR    
-        offset_midstance = datos_reescalados['fases']['loading_response']['suma_fase'].iloc[-1] - fase_sumas['midstance'].iloc[0]
-        datos_reescalados['fases']['midstance']['suma_fase'] += offset_midstance
-        
-        offset_terminal = datos_reescalados['fases']['midstance']['suma_fase'].iloc[-1] - fase_sumas['terminal_stance'].iloc[0]
-        datos_reescalados['fases']['terminal_stance']['suma_fase'] += offset_terminal
-        
-        
-        suma_reescalada_corregida = pd.Series(0, index=datos_ciclo.index, dtype=float)
-        for fase, (start, end) in segmentos.items():
-            suma_reescalada_corregida.loc[start:end] = datos_reescalados['fases'][fase]['suma_fase']
-        
-        
-        picos_recalc, valles_recalc = recalcular_picos_valleys(suma_reescalada_corregida)
-        
-        if picos_recalc is None or valles_recalc is None:
-            p1_recalc, p2_recalc, v_recalc = p1, p2, v
-        else:
-            p1_recalc, p2_recalc = picos_recalc
-            v_recalc = valles_recalc[0]
-        
-        p1_recalc, p2_recalc = [suma_reescalada_corregida.index[p] for p in picos_recalc] if len(picos_recalc) else []
-        v_recalc = suma_reescalada_corregida.index[v_recalc] if v_recalc else []
-        
-        segmentos = {
-            'loading_response': (inicio, p1_recalc),
-            'midstance': (p1_recalc, v_recalc),
-            'terminal_stance': (v_recalc, p2_recalc),
-            'pre_swing': (p2_recalc, fin)
-        }
-        
-        #FALTARIA ACTUALIZAR datos_reescalados() CON ESTA NUEVA INFO DE PICOS Y VALLES SIENTO (O CAPAZ QUEDARNOS CON LOS NUEVOS Y LISTO)
-        '''
-        plt.figure(figsize=(14, 7))
-        for fase, (start, end) in segmentos.items():
-            start = round(start, 6)
-            end = round(end, 6)
+            colores_fases = {
+                'loading_response': 'red',
+                'midstance': 'green',
+                'terminal_stance': 'blue',
+                'pre_swing': 'orange'
+            }
+
+            plt.figure(figsize=(14, 7))
+            for fase, (start, end) in segmentos.items():
+                plt.axvspan(start, end, alpha=0.2, color=colores_fases[fase], label=fase)
+
+            plt.plot(suma_total.index, suma_total.values, '--', label="Suma original")
+
+            colormap = plt.colormaps['tab10']
+            for i, sensor in enumerate(datos_ciclo.columns):
+                plt.plot(datos_ciclo.index, datos_ciclo[sensor], color=colormap(i), alpha=0.6, label=sensor)
             
-            plt.axvspan(start, end, alpha=0.2, color=colores_fases[fase], label=fase)
+            plt.plot(p1, suma_total.loc[p1], 'ro')
+            plt.plot(p2, suma_total.loc[p2], 'ro')
+            plt.plot(v,  suma_total.loc[v], 'bo')
 
-        plt.plot(suma_total.index, suma_total.values, '--', label="Suma original")
-        #plt.plot(suma_reescalada_corregida.index, suma_reescalada_corregida.values, 'k-', label="Suma reescalada")
+            plt.title(f"{sufijo} - Pasada {i_passada+1} - Ciclo {ciclo_info['cycle_num']}")
+            plt.xlabel("Índice de muestra")
+            plt.ylabel("Señal")
+            plt.legend()
+            plt.tight_layout()
 
-        colormap = plt.colormaps['tab10']
-        for i, sensor in enumerate(datos_ciclo.columns):
-            plt.plot(datos_ciclo.index, datos_ciclo[sensor], color=colormap(i), alpha=0.6, label=sensor)
-        
-        #plt.plot(p1_recalc, suma_reescalada_corregida.loc[p1_recalc], 'ro')
-        #plt.plot(p2_recalc, suma_reescalada_corregida.loc[p2_recalc], 'ro')
-        #plt.plot(v_recalc,  suma_reescalada_corregida.loc[v_recalc], 'bo')
-        plt.plot(p1, suma_total.loc[p1], 'ro')
-        plt.plot(p2, suma_total.loc[p2], 'ro')
-        plt.plot(v,  suma_total.loc[v], 'bo')
-
-        plt.title(f"{sufijo} - Ciclo {ciclo_info['cycle_num']}")
-        plt.xlabel("Índice de muestra")
-        plt.ylabel("Señal")
-        plt.legend()
-        plt.tight_layout()
+    plt.show()
 
 
+'''graficar_suma_por_fases_con_sensores_v2(filt_der, results_der, indices_apoyo_der, lado="R")
+graficar_suma_por_fases_con_sensores_v2(filt_izq, results_izq, indices_apoyo_izq, lado="L")
+plt.show()
 '''
-graficar_suma_por_fases_con_sensores_v2(filt_der[0], results_der, indices_apoyo_der, lado="R")
-graficar_suma_por_fases_con_sensores_v2(filt_izq[0], results_izq, indices_apoyo_izq, lado="L")
-'''
-
 
 def exportar_tabla_latex_metricas(df_metricas, pie="Derecho", archivo="tabla_metricas.tex"):
     """
     Exporta un DataFrame de métricas con RMS y MAE
     resaltando en negrita los valores altos.
+    Además imprime un resumen de cuántos ciclos por pasada tienen RMS alto.
     """
-
+    # Exportar tabla LaTeX
     with open(archivo, "w") as f:
         f.write("\\begin{table}[H]\n")
         f.write("\\centering\n")
@@ -1618,6 +1829,19 @@ def exportar_tabla_latex_metricas(df_metricas, pie="Derecho", archivo="tabla_met
 
     print(f"Tabla LaTeX exportada a {archivo}")
 
+    # ---- Nuevo: contar RMS alto ----
+    print("\nResumen de ciclos con RMS alto:")
+    conteo = df_metricas[df_metricas['RMS_ALTO']].groupby('Pasada').size()
+
+    if conteo.empty:
+        print("No hay ciclos con RMS alto.")
+    else:
+        for pasada, cantidad in conteo.items():
+            print(f"  Pasada {pasada}: {cantidad} ciclo(s) con RMS alto")
+
+    total = conteo.sum()
+    print(f"\nTOTAL ciclos con RMS alto: {total}")
+
 
 # Supongamos que resumen_total es todo
 # O filtrás solo uno:
@@ -1629,4 +1853,3 @@ exportar_tabla_latex_metricas(derecho, pie="Derecho", archivo="tabla_rms_mae_der
 
 # Exportar pie izquierdo:
 exportar_tabla_latex_metricas(izquierdo, pie="Izquierdo", archivo="tabla_rms_mae_izquierdo.tex")
-
