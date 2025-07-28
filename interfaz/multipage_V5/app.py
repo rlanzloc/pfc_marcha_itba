@@ -39,9 +39,9 @@ sidebar = dbc.Nav(
             [
                 # Título de la aplicación - Sin línea inferior
                 html.Div(
-                    "Menu",
+                    "Menú",
                     style={
-                        "fontSize": "24px",
+                        "fontSize": "28px",
                         "fontWeight": "bold",
                         "color": "white",
                         "padding": "20px",
