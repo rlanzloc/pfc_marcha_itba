@@ -10,6 +10,7 @@ app = dash.Dash(__name__, use_pages=True,
 
 
 
+
 # Configuración para Bootstrap Icons
 app.index_string = '''
 <!DOCTYPE html>

@@ -320,10 +320,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
     dataframes_der, mV_der = preproc_df(raw_der_final)  # DataFrames de la derecha
     dataframes_izq, mV_izq = preproc_df(raw_izq_final)
 
-    # === 1️⃣ SIN forward fill: usar raw_der y raw_izq tal cual ===
-    dataframes_der_raw, mV_der_raw = preproc_df(raw_der)
-    dataframes_izq_raw, mV_izq_raw = preproc_df(raw_izq)
-
     sampling_rate = 100  # Frecuencia de muestreo en Hz
     cutoff_frequency = 20  # Frecuencia de corte del filtro pasa bajos en Hz
 
@@ -352,24 +348,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
 
         lowpass_izq.append(df_filtered)
         
-        
-    # === Lowpass SIN forward fill ===
-    lowpass_der_raw = []
-    lowpass_izq_raw = []
-
-    for df in dataframes_der_raw:
-        df_filtered = df.copy()
-        for column in df.columns:
-            df_filtered[column] = apply_lowpass_filter(df[column], cutoff_frequency, sampling_rate)
-        lowpass_der_raw.append(df_filtered)
-
-    for df in dataframes_izq_raw:
-        df_filtered = df.copy()
-        for column in df.columns:
-            df_filtered[column] = apply_lowpass_filter(df[column], cutoff_frequency, sampling_rate)
-        lowpass_izq_raw.append(df_filtered)
-
-
     # Parámetros del filtro Savitzky-Golay
     window_length = 11  # Tamaño de la ventana del filtro (debe ser un número impar)
     polyorder = 3    # Orden del polinomio usado en el filtro
@@ -401,26 +379,6 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
 
         filt_der.append(df_filtered)
         
-    
-    # === Filtro SIN forward fill ===
-    filt_der_raw = []
-    filt_izq_raw = []
-
-    for df in dataframes_der_raw:
-        df_suave = suavizar_saturacion_df_spline_direccion(df, margen=1, delta=1, saturacion=25, lado='D')
-        df_filtered = df_suave.copy()
-        for column in df_filtered.columns:
-            df_filtered[column] = savgol_filter(df_filtered[column], window_length=window_length, polyorder=polyorder)
-        filt_der_raw.append(df_filtered)
-
-    for df in dataframes_izq_raw:
-        df_suave = suavizar_saturacion_df_spline_direccion(df, margen=2, delta=2, saturacion=25, lado='I')
-        df_filtered = df_suave.copy()
-        for column in df_filtered.columns:
-            df_filtered[column] = savgol_filter(df_filtered[column], window_length=window_length, polyorder=polyorder)
-        filt_izq_raw.append(df_filtered)
-    
-    
     # === Sumas finales ===
     sums_der = []
     sums_izq = []
@@ -433,17 +391,11 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
         sum_izq = filtered_df.sum(axis=1)
         sums_izq.append(sum_izq)
         
-    # === Sumas SIN forward fill ===
-    sums_der_raw = [df.sum(axis=1).to_frame() for df in filt_der_raw]
-    sums_izq_raw = [df.sum(axis=1).to_frame() for df in filt_izq_raw]
 
     # Asegurar formato consistente
     sums_der = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_der]
     sums_izq = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_izq]
-        
-    sums_der_raw = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_der_raw]
-    sums_izq_raw = [df if isinstance(df, pd.DataFrame) else df.to_frame() for df in sums_izq_raw]
-    
+
     
     return filt_der, filt_izq, sums_der, sums_izq, dataframes_der, dataframes_izq, mV_der, mV_izq, ubicacion_muestras_der, ubicaciones_muestras_izq
 
@@ -569,50 +521,6 @@ sums_der, offsets_sum_der= correccion_baseline_general(sums_der, modo='suma')
 sums_izq, offsets_sum_izq = correccion_baseline_general(sums_izq, modo='suma')
 
 
-
-'''# GRÁFICOS FILT (kg)
-# Pie DERECHO 
-der = filt_der
-if len(der) == 0:
-    print("No hay datos de PIE DERECHO para graficar.")
-else:
-    fig_der_kg, axes = plt.subplots(len(der), 1, figsize=(12, 2.5 * len(der)))
-    if len(der) == 1:
-        axes = [axes]
-    
-    for i, df in enumerate(der):
-        cols = [col for col in df.columns if col != 'Tiempo']
-        df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie Derecho - Pasada {i+1}', pad=10)
-        axes[i].set_xlabel("Tiempo (s)")
-        axes[i].set_ylabel("Voltaje (mV)")
-        axes[i].legend()
-    
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)
-
-izq = lowpass_izq
-# Pie IZQUIERDO 
-if len(izq) == 0:
-    print("No hay datos de PIE IZQUIERDO para graficar.")
-else:
-    fig_izq_kg, axes = plt.subplots(len(izq), 1, figsize=(12, 2.5 * len(izq)))
-    if len(izq) == 1:
-        axes = [axes]
-    
-    for i, df in enumerate(izq):
-        cols = [col for col in df.columns if col != 'Tiempo']
-        df[cols].plot(ax=axes[i])
-        axes[i].set_title(f'Pie Izquierdo - Pasada {i+1}', pad=10)
-        axes[i].set_xlabel("Tiempo (s)")
-        axes[i].set_ylabel("Voltaje (mV)")
-        axes[i].legend()
-    
-    plt.tight_layout()
-    plt.subplots_adjust(hspace=0.4)'''
-
-
-    
 
 def segmentar_ciclos_vgrf_desde_picos(series_list,
                                       frecuencia_hz=100,
@@ -1191,14 +1099,14 @@ def plot_izquierda_derecha(sums_der_subset, sums_izq_subset,
         ax.legend()
         plt.tight_layout()
 
-'''plot_izquierda_derecha(
+plot_izquierda_derecha(
     sums_der,
     sums_izq,
     min_indices_der,
     min_indices_izq,
     results_der,
     results_izq
-)'''
+)
 
 
 def extraer_fases(results, señales, lado="der"):
@@ -1241,8 +1149,8 @@ def extraer_fases(results, señales, lado="der"):
 
 
 
-'''extraer_fases(results_der, sums_der, lado="der")
-extraer_fases(results_izq, sums_izq, lado="izq")'''
+extraer_fases(results_der, sums_der, lado="der")
+extraer_fases(results_izq, sums_izq, lado="izq")
 
 
 
@@ -1418,56 +1326,8 @@ def plot_promedios_comparados(promedios_list, lado="R"):
     plt.legend()
     plt.tight_layout()
     
-'''plot_promedios_comparados(promedio_der, lado="R")
-plot_promedios_comparados(promedio_izq, lado="L")'''
-
-
-
-from sklearn.metrics import mean_squared_error
-import numpy as np
-
-def calcular_repeatability_limit_astm(promedios_list):
-    """
-    Calcula el repeatability limit (ASTM E691) entre pares de curvas promedio de pasadas.
-
-    Parámetros:
-        promedios_list: lista de DataFrames, cada uno con columnas 'Ciclo (%)' y 'Promedio (%BW)'
-
-    Retorna:
-        dict con:
-            - RMSE promedio entre pares
-            - Desviación estándar de RMSE entre pares (s_r)
-            - Repeatability limit (r = 2.8 * s_r)
-    """
-    # Extraer las curvas como arrays
-    curvas = [df['Promedio (%BW)'].values for df in promedios_list if not df.empty]
-    curvas = np.array(curvas)
-    n = len(curvas)
-
-    # Calcular RMSE entre todos los pares posibles
-    rmse_pares = []
-    for i in range(n):
-        for j in range(i + 1, n):
-            rmse = np.sqrt(mean_squared_error(curvas[i], curvas[j]))
-            rmse_pares.append(rmse)
-
-    # Calcular desviación estándar y repeatability limit
-    rmse_pares = np.array(rmse_pares)
-    s_r = np.std(rmse_pares)
-    r_astm = 2.8 * s_r
-
-    return {
-        "RMSE entre pares (promedio)": np.mean(rmse_pares),
-        "Desviación estándar (s_r)": s_r,
-        "Repeatability limit ASTM (r)": r_astm
-    }
-
-# Ejemplo de uso:
-resultados_derecho = calcular_repeatability_limit_astm(promedio_der)
-resultados_izquierdo = calcular_repeatability_limit_astm(promedio_izq)
-
-
-
+plot_promedios_comparados(promedio_der, lado="R")
+plot_promedios_comparados(promedio_izq, lado="L")
 
 
 def graficar_suma_por_fases_con_sensores_v2(filt_list, results_list, indices_ciclos_list, lado="R"):
@@ -1535,8 +1395,8 @@ def graficar_suma_por_fases_con_sensores_v2(filt_list, results_list, indices_cic
     
 
 
-'''graficar_suma_por_fases_con_sensores_v2(filt_der, results_der, indices_apoyo_der, lado="R")
-graficar_suma_por_fases_con_sensores_v2(filt_izq, results_izq, indices_apoyo_izq, lado="L")'''
+graficar_suma_por_fases_con_sensores_v2(filt_der, results_der, indices_apoyo_der, lado="R")
+graficar_suma_por_fases_con_sensores_v2(filt_izq, results_izq, indices_apoyo_izq, lado="L")
 
 coord_sensores = pd.DataFrame([
     ['S1', 6.4, 152.1],
@@ -1549,187 +1409,6 @@ coord_sensores = pd.DataFrame([
     ['S8', 41.3, -15.3]
 ], columns=["Sensor", "X", "Y"]).set_index("Sensor")
 
-def graficar_promedio_por_pie(filt_df_list, results, coord_sensores, pie="Derecho"):
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    from matplotlib import cm
-    from scipy.interpolate import splprep, splev
-
-    fases = ["loading_response", "midstance", "terminal_stance", "pre_swing"]
-
-    sensores_orden = ["S4", "S3", "S1", "S2", "S5", "S6", "S7", "S8"]
-
-    coord_plot = coord_sensores.copy()
-
-    for pasada_idx, (resultado, pasada_df) in enumerate(zip(results, filt_df_list)):
-
-        acumulador = {fase: [] for fase in fases}
-
-        # === Sumar aportes por fase SOLO PARA ESA PASADA ===
-        for detalle in resultado["details"]:
-            if not detalle["is_valid"]:
-                continue
-
-            tiempo_inicio = detalle.get("start_index")
-            tiempo_fin = detalle.get("end_index")
-            peaks = detalle.get("peaks", [])
-            valleys = detalle.get("valleys", [])
-
-            if tiempo_inicio is None or tiempo_fin is None or len(peaks) < 2 or len(valleys) < 1:
-                continue
-
-            try:
-                tiempo_inicio = float(tiempo_inicio)
-                tiempo_fin = float(tiempo_fin)
-                pico1 = float(peaks[0])
-                valle = float(valleys[0])
-                pico2 = float(peaks[1])
-            except Exception:
-                continue
-
-            segmentos = {
-                "loading_response": (tiempo_inicio, pico1),
-                "midstance": (pico1, valle),
-                "terminal_stance": (valle, pico2),
-                "pre_swing": (pico2, tiempo_fin)
-            }
-
-            for fase, (t0, t1) in segmentos.items():
-                segmento_df = pasada_df[(pasada_df.index >= t0) & (pasada_df.index <= t1)]
-                sumas = segmento_df.sum()
-                total = sumas.sum()
-                if total > 0:
-                    porcentajes = (sumas / total * 100)
-                    acumulador[fase].append(porcentajes)
-
-        promedio_fases = {
-            fase: pd.concat(valores, axis=1).mean(axis=1) if valores else pd.Series([0]*8, index=pasada_df.columns)
-            for fase, valores in acumulador.items()
-        }
-
-        max_global = max([p.max() for p in promedio_fases.values()])
-
-        sensores = promedio_fases[fases[0]].index
-        sensor_id = lambda s: s.replace("Derecha_", "").replace("Izquierda_", "")
-
-        x_barras = []
-        y_barras = []
-        x_offset = []
-        y_offset = []
-
-        xc, yc = np.mean(coord_plot["X"]), np.mean(coord_plot["Y"])
-
-        for sid in sensores_orden:
-            xi = coord_plot.loc[sid, "X"]
-            yi = coord_plot.loc[sid, "Y"]
-
-            sensor_num = int(sid.replace('S', ''))
-
-            x_barras.append(xi)
-            y_barras.append(yi)
-
-            offset_x, offset_y = 0, 0
-            if sensor_num in [6, 7, 8]:
-                offset_x = -5
-                offset_y = -15
-            elif sensor_num == 5:
-                offset_x = -10
-                offset_y = -10
-            elif sensor_num == 4:
-                r = np.sqrt((xi - xc)**2 + (yi - yc)**2)
-                dx = (xi - xc) / r if r != 0 else 0
-                dy = (yi - yc) / r if r != 0 else 0
-                offset_x = dx * -15
-                offset_y = dy * 20
-            else:
-                r = np.sqrt((xi - xc)**2 + (yi - yc)**2)
-                dx = (xi - xc) / r if r != 0 else 0
-                dy = (yi - yc) / r if r != 0 else 0
-                offset_x = dx * 20
-                offset_y = dy * 20
-
-            x_offset.append(xi + offset_x)
-            y_offset.append(yi + offset_y)
-
-        if pie == "Derecho":
-            x_barras_final = x_barras
-            y_barras_final = y_barras
-            x_offset_final = x_offset
-            y_offset_final = y_offset
-        else:
-            xc_ref = np.mean(x_barras)
-            ajustes_offset = {
-                "S1": (7, -3),
-                "S2": (7, -25),
-                "S3": (0, 3),
-                "S4": (3, 0),
-                "S5": (-5, 0),
-                "S6": (3, 2),
-                "S7": (0, 3),
-                "S8": (3, 5)
-            }
-            delta_x_offset = -5
-            delta_y_offset = 0
-
-            x_offset_ajustado = []
-            y_offset_ajustado = []
-            for sid, x0, y0 in zip(sensores_orden, x_offset, y_offset):
-                dx, dy = ajustes_offset.get(sid, (0, 0))
-                x0 += dx + delta_x_offset
-                y0 += dy + delta_y_offset
-                x_offset_ajustado.append(x0)
-                y_offset_ajustado.append(y0)
-
-            x_barras_final = [2 * xc_ref - x for x in x_barras]
-            y_barras_final = y_barras
-
-            x_offset_final = [2 * xc_ref - x for x in x_offset_ajustado][::-1]
-            y_offset_final = y_offset_ajustado[::-1]
-
-        x_closed = np.append(x_offset_final, x_offset_final[0])
-        y_closed = np.append(y_offset_final, y_offset_final[0])
-
-        tck, u = splprep([x_closed, y_closed], s=5, per=True)
-        unew = np.linspace(0, 1.0, 300)
-        out = splev(unew, tck)
-
-        fig = plt.figure(figsize=(20, 5))
-        fig.suptitle(f"Aporte promedio por sensor - Pie {pie} | Pasada {pasada_idx+1}", fontsize=16)
-        fig.patch.set_facecolor("white")
-        cmap = cm.get_cmap('jet')
-
-        for i, fase in enumerate(fases, 1):
-            porcentajes = promedio_fases[fase]
-            z = [0] * len(sensores_orden)
-            dz = [porcentajes[s] for s in sensores]
-            colors = [cmap(min(d / max_global, 1.0)) for d in dz]
-
-            ax = fig.add_subplot(1, 4, i, projection='3d')
-            ax.bar3d(x_barras_final, y_barras_final, z, dx=5, dy=5, dz=dz, color=colors, shade=True)
-
-            ax.plot(out[0], out[1], zs=0, zdir='z', color='k', lw=1.5, alpha=0.9)
-
-            ax.set_facecolor("white")
-            ax.set_xlim(-50, 130)
-            ax.set_ylim(-70, 180)
-            ax.set_zlim(0, max_global * 0.9)
-            ax.set_title(fase.replace("_", " ").title())
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_zticks([])
-
-            for xi, yi, zi in zip(x_barras_final, y_barras_final, dz):
-                ax.text(xi, yi, zi + 2, f"{zi:.1f}%", fontsize=5, ha='left', va='bottom')
-
-        plt.tight_layout()
-        plt.show()
-
-
-
-'''graficar_promedio_por_pie(filt_der, results_der, coord_sensores, pie='Derecho')
-graficar_promedio_por_pie(filt_izq, results_izq, coord_sensores, pie='Izquierdo')
-'''
 
 def graficar_promedio_por_pie_2D(filt_df_list, results, coord_sensores, pie="Derecho"):
     import numpy as np
@@ -1898,8 +1577,8 @@ def graficar_promedio_por_pie_2D(filt_df_list, results, coord_sensores, pie="Der
 
 
 
-'''graficar_promedio_por_pie_2D(filt_der, results_der, coord_sensores, pie='Derecho')
-graficar_promedio_por_pie_2D(filt_izq, results_izq, coord_sensores, pie='Izquierdo')'''
+graficar_promedio_por_pie_2D(filt_der, results_der, coord_sensores, pie='Derecho')
+graficar_promedio_por_pie_2D(filt_izq, results_izq, coord_sensores, pie='Izquierdo')
 
 
 # === Coordenadas de sensores ===
@@ -2102,137 +1781,3 @@ for pasada_idx, (copx_izq, copy_izq, copx_der, copy_der) in enumerate(
         ax.legend()
 
     plt.tight_layout()
-
-
-
-def graficar_COP_Y_vs_sensores(copy_all, fuerza_all, lado="I"):
-    """
-    Graficar COP Y (mm) vs % ciclo + fuerzas de sensores.
-    Eje Y principal = COP.
-    Eje Y secundario = fuerzas sensores.
-    Agrega banda gris cuando vGRF < 5% del máximo.
-    """
-    sufijo = "Izquierdo" if lado.upper() == "I" else "Derecho"
-
-    for pasada_idx, (copy_pasada, fuerza_pasada) in enumerate(zip(copy_all, fuerza_all)):
-        for ciclo_idx, (cop_y, df_fuerza) in enumerate(zip(copy_pasada, fuerza_pasada)):
-
-            fig, ax1 = plt.subplots(figsize=(12, 6))
-
-            x = np.linspace(0, 100, len(cop_y))
-
-            # === COP Y ===
-            ax1.plot(x, cop_y, color='black', linewidth=2, label="COP Y")
-            ax1.set_xlabel("% Ciclo")
-            ax1.set_ylabel("COP Y (mm)")
-            ax1.set_ylim([0,200])
-            ax1.grid(True)
-
-            # === Eje Y secundario ===
-            ax2 = ax1.twinx()
-            colormap = plt.colormaps['tab10']
-
-            for i, sensor in enumerate(df_fuerza.columns):
-                ax2.plot(
-                    x,
-                    df_fuerza[sensor],
-                    color=colormap(i),
-                    alpha=0.6,
-                    label=sensor
-                )
-
-            ax2.set_ylabel("Fuerza (kg)")
-
-            # === Banda gris por debajo del umbral ===
-            # Calcular vGRF total
-            vgrf_total = df_fuerza.sum(axis=1)
-            umbral = 0.07 * vgrf_total.max()
-
-            # Leyendas combinadas
-            lines_1, labels_1 = ax1.get_legend_handles_labels()
-            lines_2, labels_2 = ax2.get_legend_handles_labels()
-            ax1.legend(lines_1 + lines_2, labels_1 + labels_2, loc='upper left')
-
-            plt.title(f"{sufijo} - Pasada {pasada_idx + 1} - Ciclo {ciclo_idx + 1}\nCOP Y y aporte de sensores")
-            plt.tight_layout()
-
-        
-
-'''graficar_COP_Y_vs_sensores(copy_izq_all, filt_izq, lado="I")
-graficar_COP_Y_vs_sensores(copy_der_all, filt_der, lado="R")
-plt.show()
-'''
-
-
-
-'''def exportar_tabla_latex_metricas(df_metricas, pie="Derecho", archivo="tabla_metricas.tex"):
-    """
-    Exporta un DataFrame de métricas con RMS y MAE
-    resaltando en negrita los valores altos.
-    Además imprime un resumen de cuántos ciclos por pasada tienen RMS alto.
-    """
-    # Exportar tabla LaTeX
-    with open(archivo, "w") as f:
-        f.write("\\begin{table}[H]\n")
-        f.write("\\centering\n")
-        f.write("\\renewcommand{\\arraystretch}{1.2}\n")
-        f.write("\\begin{tabular}{|c|c|c|c|}\n")
-        f.write("\\hline\n")
-        f.write("\\textbf{Pasada} & \\textbf{Ciclo} & \\textbf{RMS} & \\textbf{MAE} \\\\\n")
-        f.write("\\hline\n")
-
-        for _, row in df_metricas.iterrows():
-            pasada = int(row['Pasada'])
-            ciclo = int(row['Ciclo'])
-
-            if row['RMS_ALTO']:
-                rms = f"\\textbf{{{row['RMS']:.4f}}}"
-            else:
-                rms = f"{row['RMS']:.4f}"
-
-            if row['MAE_ALTO']:
-                mae = f"\\textbf{{{row['MAE']:.4f}}}"
-            else:
-                mae = f"{row['MAE']:.4f}"
-
-            f.write(f"{pasada} & {ciclo} & {rms} & {mae} \\\\\n")
-            f.write("\\hline\n")
-
-        f.write("\\end{tabular}\n")
-        f.write(f"\\caption{{Valores de RMS y MAE de cada ciclo por pasada para el pie {pie}.}}\n")
-        f.write(f"\\label{{tab:rms_mae_pie_{pie.lower()}}}\n")
-        f.write("\\end{table}\n")
-
-    print(f"Tabla LaTeX exportada a {archivo}")
-
-    # ---- Nuevo: contar RMS alto ----
-    print("\nResumen de ciclos con RMS alto:")
-    conteo = df_metricas[df_metricas['RMS_ALTO']].groupby('Pasada').size()
-
-    if conteo.empty:
-        print("No hay ciclos con RMS alto.")
-    else:
-        for pasada, cantidad in conteo.items():
-            print(f"  Pasada {pasada}: {cantidad} ciclo(s) con RMS alto")
-
-    total = conteo.sum()
-    print(f"\nTOTAL ciclos con RMS alto: {total}")
-
-
-# Supongamos que resumen_total es todo
-# O filtrás solo uno:
-derecho = tabla_der[tabla_der['Pasada'] <= 5]
-izquierdo = tabla_izq[tabla_izq['Pasada'] <= 5]
-
-# Exportar pie derecho:
-exportar_tabla_latex_metricas(derecho, pie="Derecho", archivo="tabla_rms_mae_derecho.tex")
-
-# Exportar pie izquierdo:
-exportar_tabla_latex_metricas(izquierdo, pie="Izquierdo", archivo="tabla_rms_mae_izquierdo.tex")'''
-
-
-
-
-
-
-

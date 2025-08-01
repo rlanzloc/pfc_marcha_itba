@@ -11,9 +11,11 @@ from dash.exceptions import PreventUpdate
 from io import StringIO
 import plotly.express as px  
 import time
+import traceback
 
 dash.register_page(__name__, path="/pg4", name='Análisis Cinético', icon="file-earmark-text")
 from analisis_plantillas import procesar_archivo_plantillas
+from generar_figuras_cinetico import generar_figuras_cinetico
 
 # -------- Variables y directorio -----------------
 ruta_actual = Path(__file__).resolve().parent
@@ -154,18 +156,11 @@ layout = html.Div([
 
     html.Div(id='tabs-content'),
 
-    # Los gráficos se muestran solo si hay datos válidos
-    html.Div([
-        dcc.Graph(id='grafico-izquierda', style={'display': 'none'}),
-        dcc.Graph(id='grafico-derecha', style={'display': 'none'})
-    ]),
-
-    dcc.Store(id='data-izq-store'),
-    dcc.Store(id='data-der-store')
 ])
 
 
 def render_tab(tab):
+    print(f"🧱 render_tab ejecutado: {tab}")
     if tab == 'tab-sensores':
         return html.Div([
             html.Div([
@@ -178,7 +173,7 @@ def render_tab(tab):
                     'fontSize': '20px',
                     'marginLeft': '8px'
                 }),
-                html.Div(style={'flex': '1'}),  # separador flexible
+                html.Div(style={'flex': '1'}),
                 html.Button('Iniciar Lectura', id='start-button', n_clicks=0, disabled=True, style={
                     'backgroundColor': '#428bca',
                     'color': 'white',
@@ -201,6 +196,7 @@ def render_tab(tab):
 
             html.Div(id='reading-status', style={'width': '100%'})
         ])
+
     elif tab == 'tab-csv':
         return html.Div([
             dcc.Upload(
@@ -224,8 +220,46 @@ def render_tab(tab):
                 },
                 multiple=True
             ),
-            html.Div(id='csv-validation')
+            html.Div(id='csv-validation'),
+
+            # 🎯 GRÁFICOS CINÉTICOS - TODOS CON go.Figure() y bien definidos
+            html.Div([
+
+                html.H4("Curvas de ciclos válidos e inválidos"),
+                dcc.Graph(id='fig-ciclos', figure=go.Figure(), style={'display': 'none', 'margin-bottom': '30px'}),
+
+                html.Div([
+                    html.Div([
+                        html.H4("Fase de apoyo - Pie izquierdo"),
+                        dcc.Graph(id='fig-fases-izq', figure=go.Figure(), style={'display': 'none'})
+                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'}),
+
+                    html.Div([
+                        html.H4("Fase de apoyo - Pie derecho"),
+                        dcc.Graph(id='fig-fases-der', figure=go.Figure(), style={'display': 'none'})
+                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'})
+                ]),
+
+                html.Div([
+                    html.H4("Trayectoria del centro de presión (COP)"),
+                    dcc.Graph(id='fig-cop', figure=go.Figure(), style={'display': 'none', 'margin-bottom': '30px'})
+                ]),
+
+                html.Div([
+                    html.Div([
+                        html.H4("Aporte promedio por fase - Pie izquierdo"),
+                        dcc.Graph(id='fig-aporte-izq', figure=go.Figure(), style={'display': 'none'})
+                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'}),
+
+                    html.Div([
+                        html.H4("Aporte promedio por fase - Pie derecho"),
+                        dcc.Graph(id='fig-aporte-der', figure=go.Figure(), style={'display': 'none'})
+                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'})
+                ])
+            ])
+
         ])
+
 
 
 # ---------- Callback para mostrar contenido de pestañas ----------
@@ -546,142 +580,98 @@ def handle_csv_upload(contents, filename, stored_data):
 
 # ---------- Mostrar gráficos con los datos cargados ----------
 @callback(
-    Output('grafico-izquierda', 'figure'),
-    Output('grafico-izquierda', 'style'),
-    Output('grafico-derecha', 'figure'),
-    Output('grafico-derecha', 'style'),
+    Output('fig-ciclos', 'figure'), Output('fig-ciclos', 'style'),
+    Output('fig-fases-izq', 'figure'), Output('fig-fases-izq', 'style'),
+    Output('fig-fases-der', 'figure'), Output('fig-fases-der', 'style'),
+    Output('fig-cop', 'figure'), Output('fig-cop', 'style'),
+    Output('fig-aporte-izq', 'figure'), Output('fig-aporte-izq', 'style'),
+    Output('fig-aporte-der', 'figure'), Output('fig-aporte-der', 'style'),
     Input('session-stored-cinetico', 'data'),
     Input('tabs', 'value'),
+    State('session-stored-cinetico', 'data')
 )
-def actualizar_graficos(stored_data, tab_value):
-    fig_izq = go.Figure()
-    fig_der = go.Figure()
+def actualizar_graficos_cineticos(trigger, tab_value, stored_data):
+
     style_hide = {'display': 'none'}
     style_show = {'display': 'block', 'width': '95%', 'height': '400px', 'margin': 'auto'}
-    
-    style_der = style_hide
-    style_izq = style_hide
+    fallback = [go.Figure(), style_hide] * 6
 
-    # Si la pestaña activa es lectura en vivo
-    if tab_value == 'tab-sensores':
-        global df_izq, df_der, reading
-        df_live_izq = None
-        df_live_der = None
+    print(f"🔄 callback activado | tab = {tab_value} | stored_data keys = {list(stored_data.keys()) if stored_data else 'None'}")
 
-        # Mostrar solo si NO está leyendo
-        if not reading:
-            with lock:
-                if not df_izq.empty:
-                    df_live_izq = df_izq.copy()
-                if not df_der.empty:
-                    df_live_der = df_der.copy()
+    if tab_value != 'tab-csv' or not stored_data:
+        print("↩️ devolviendo fallback por tab o datos vacíos")
+        return [go.Figure(), {'display': 'none'}] * 6
 
-            if df_live_izq is not None:
-                df_live_izq.set_index('Tiempo', inplace=True)
-                for i in range(8):
-                    sensor_col = f'Izquierda_S{i+1}'
-                    fig_izq.add_trace(go.Scatter(
-                        x=df_live_izq.index,
-                        y=df_live_izq[sensor_col],
-                        mode='lines',
-                        name=sensor_col
-                    ))
-                fig_izq.update_layout(
-                    title='Lectura en Vivo - Pie Izquierdo',
-                    xaxis_title='Tiempo',
-                    yaxis_title='Valores crudos',
-                    template='plotly_white'
-                )
-                style_izq = style_show
+    try:
+        # Verificar que los datos tienen contenido válido
+        if not stored_data.get('izq') or not stored_data.get('der'):
+            raise ValueError("Datos incompletos")
+        
+        raw_izq = stored_data.get('izq')
+        raw_der = stored_data.get('der')
 
-            if df_live_der is not None:
-                df_live_der.set_index('Tiempo', inplace=True)
-                for i in range(8):
-                    sensor_col = f'Derecha_S{i+1}'
-                    fig_der.add_trace(go.Scatter(
-                        x=df_live_der.index,
-                        y=df_live_der[sensor_col],
-                        mode='lines',
-                        name=sensor_col
-                    ))
-                fig_der.update_layout(
-                    title='Lectura en Vivo - Pie Derecho',
-                    xaxis_title='Tiempo',
-                    yaxis_title='Valores crudos',
-                    template='plotly_white'
-                )
-                style_der = style_show
+        if not raw_izq or not raw_der:
+            print("⚠️ raw_izq o raw_der vacíos")
+            return fallback
+
+        df_izq = pd.read_json(StringIO(raw_izq), orient='split')
+        df_der = pd.read_json(StringIO(raw_der), orient='split')
+
+        if df_izq.empty or df_der.empty:
+            print("⚠️ df_izq o df_der vacíos")
+            return fallback
+
+        from analisis_plantillas import procesar_archivo_plantillas
+        from generar_figuras_cinetico import generar_figuras_cinetico
+
+        print("🔄 Procesando archivo plantillas...")
+        data_proc = procesar_archivo_plantillas(df_der, df_izq)
+        print("📦 Claves de data_proc:", list(data_proc.keys()))
+        # Desempaquetar listas de 1 elemento (solo si corresponde)
+        evitar_desempaquetar = {
+            'resultados_der', 'resultados_izq',
+            'copx_der', 'copy_der', 'copx_izq', 'copy_izq',
+            'min_indices_der', 'min_indices_izq',
+            'min_tiempos_der', 'min_tiempos_izq',
+            'ciclos_apoyo_der', 'ciclos_apoyo_izq',
+            'ciclos_completos_der', 'ciclos_completos_izq',
+            'indices_apoyo_der', 'indices_apoyo_izq'
+        }
+
+        for key in data_proc:
+            valor = data_proc[key]
+            print(f"🔍 Revisando clave: {key} | tipo: {type(valor)}")
+
+            if isinstance(valor, list) and len(valor) == 1 and key not in evitar_desempaquetar:
+                if isinstance(valor[0], (pd.DataFrame, list, dict)):
+                    data_proc[key] = valor[0]
+                    print(f"   ↪️ Desempaquetado '{key}'")
 
 
-    # Si la pestaña activa es CSV
-    elif tab_value == 'tab-csv' and stored_data:
-        # Procesar datos si están disponibles
-        if stored_data.get('izq') or stored_data.get('der'):
-            # Cargar datos crudos
-            df_izq_csv = pd.read_json(StringIO(stored_data['izq']), orient='split') if stored_data.get('izq') else None
-            df_der_csv = pd.read_json(StringIO(stored_data['der']), orient='split') if stored_data.get('der') else None
-            
-            # Aplicar función de procesamiento
-            try:
-                filt_der, filt_izq = procesar_archivo_plantillas(
-                    df_der_csv if df_der_csv is not None else pd.DataFrame(),
-                    df_izq_csv if df_izq_csv is not None else pd.DataFrame()
-                )
-                
-                # Asumimos que cada lista contiene al menos un DataFrame
-                df_izq_procesado = filt_izq[0] if filt_izq else df_izq_csv
-                df_der_procesado = filt_der[0] if filt_der else df_der_csv
-                
-            except Exception as e:
-                print(f"Error en procesamiento: {e}")
-                df_izq_procesado = df_izq_csv
-                df_der_procesado = df_der_csv
+        print("🎨 Llamando a generar_figuras_cinetico()")
 
-            # --- Gráfico PIE IZQUIERDO ---
-            if df_izq_procesado is not None:
-                for i in range(8):
-                    col_name = f'Izquierda_S{i+1}'
-                    if col_name in df_izq_procesado.columns:
-                        fig_izq.add_trace(go.Scatter(
-                            x=df_izq_procesado.index,
-                            y=df_izq_procesado[col_name],
-                            mode='lines',
-                            name=f'{col_name}',
-                            line=dict(color=px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)], width=1.5)
-                        ))
-                fig_izq.update_layout(
-                    title='<b>Pie Izquierdo</b> - Datos Procesados',
-                    xaxis_title='Tiempo (s)',
-                    yaxis_title='Fuerza (kg)',
-                    template='plotly_white'
-                )
-                style_izq = style_show
+        fig_ciclos, fig_fases_izq, fig_fases_der, fig_cop, fig_aporte_izq, fig_aporte_der = generar_figuras_cinetico(data_proc)
+        print("✅ Figuras generadas correctamente.")
 
-            # --- Gráfico PIE DERECHO ---
-            if df_der_procesado is not None:
-                for i in range(8):
-                    col_name = f'Derecha_S{i+1}'
-                    if col_name in df_der_procesado.columns:
-                        fig_der.add_trace(go.Scatter(
-                            x=df_der_procesado.index,
-                            y=df_der_procesado[col_name],
-                            mode='lines',
-                            name=f'{col_name}',
-                            line=dict(color=px.colors.qualitative.Plotly[i % len(px.colors.qualitative.Plotly)], width=1.5)  # Colores diferentes
-                        ))
-                fig_der.update_layout(
-                    title='<b>Pie Derecho</b> - Datos Procesados',
-                    xaxis_title='Tiempo (s)',
-                    yaxis_title='Fuerza (kg)',
-                    template='plotly_white'
-                )
-                style_der = style_show
+        return [
+            fig_ciclos, style_show,
+            fig_fases_izq, style_show,
+            fig_fases_der, style_show,
+            fig_cop, style_show,
+            fig_aporte_izq, style_show,
+            fig_aporte_der, style_show
+        ]
 
-        else:
-            style_izq = style_hide
-            style_der = style_hide
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        fig_error = go.Figure()
+        fig_error.update_layout(title=f"Error: {str(e)}")
+        return [fig_error, {'display': 'block'}] * 6
 
-    return fig_izq, style_izq, fig_der, style_der
+
+
+
+
 
 
 
