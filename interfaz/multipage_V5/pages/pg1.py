@@ -16,7 +16,8 @@ layout = html.Div(
                         'color': '#2c3e50',
                         'fontWeight': '600',
                         'textAlign': 'center',
-                        'marginTop': '0px'
+                        'marginTop': '0px',
+                        'marginBottom': '0px'
                     }
                 )
             )
@@ -38,13 +39,13 @@ La interfaz permite:
 - 📊 Visualizar curvas articulares, fuerzas plantares, fases de apoyo y centro de presión.
                                 ''',
                                 style={
-                                    'fontSize': '18px',
+                                    'fontSize': '15px',
                                     'color': '#2c3e50',
-                                    'lineHeight': '1.6'
+                                    'lineHeight': '1.3'
                                 }
                             )
                         ),
-                        className="shadow-sm",
+                        className="mk-tight",
                         style={'height': '100%'}
                     ),
                     width=6
@@ -66,20 +67,21 @@ El análisis se divide en dos componentes complementarios:
 - Trayectoria del **centro de presión (CoP)**
                                 ''',
                                 style={
-                                    'fontSize': '18px',
+                                    'fontSize': '15px',
                                     'color': '#2c3e50',
-                                    'lineHeight': '1.6'
+                                    'lineHeight': '1.3'
                                 }
                             )
                         ),
-                        className="shadow-sm",
+                        className="mk-tight",
                         style={'height': '100%'}
                     ),
                     width=6
                 )
             ],
-            className="mb-4",
-            align="stretch"
+            className="gy-1",
+            align="stretch",
+            style={'marginBottom':'8px'}  
         ),
 
         # FILA DE GIFs
@@ -92,7 +94,7 @@ El análisis se divide en dos componentes complementarios:
                             'width': '100%',
                             'maxWidth': '100%',
                             'height': 'auto',
-                            'maxHeight': '300px', 
+                            'maxHeight': '200px', 
                             'borderRadius': '10px'
                         }
                     ),
@@ -105,7 +107,7 @@ El análisis se divide en dos componentes complementarios:
                             'width': '100%',
                             'maxWidth': '100%',
                             'height': 'auto',
-                            'maxHeight': '300px',  
+                            'maxHeight': '200px',  
                             'borderRadius': '10px'
                         }
                     ),
@@ -114,9 +116,11 @@ El análisis se divide en dos componentes complementarios:
             ]
         )
     ],
+    className="gy-1",
     style={
-        "padding": "25px",
+        "padding": "10px",
         "paddingTop": "0px",
+        'marginTop':'6px',
         "backgroundColor": "#f8f9fa"
     }
 )

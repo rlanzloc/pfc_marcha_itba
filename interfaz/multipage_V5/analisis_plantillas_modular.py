@@ -114,50 +114,72 @@ def preprocesar_datos(raw_der, raw_izq, xx_data, yy_data):
         nyquist = 0.5 * sampling_rate
         b, a = butter(4, cutoff_freq / nyquist, btype='low')
         return np.maximum(filtfilt(b, a, data), 0)
+    
+
 
     # === Suavizado de saturación con spline ===
-    def suavizar_saturacion_df_spline_direccion(df, margen=3, delta=2.0, saturacion=25, lado='D'):
+    def suavizar_saturacion_df_spline_direccion(df, margen=3, delta=2.0, saturacion = 25, lado='D'):
+        """
+        Suaviza mesetas que se quedan en el máximo local de cada sensor.
+        - Detecta saturación automática usando el máximo de la señal.
+        - S1–S4 (antepié) → forma ascendente
+        - S5–S8 (retropié) → forma descendente
+        """
         df_out = df.copy()
+
         for col in df.columns:
             serie = df[col]
+            valor_max = serie.max()
+
+        
+            # Encontrar zonas donde se queda saturado
             mask = serie >= saturacion
+
             if not np.any(mask):
                 continue
 
-            sensor_name = col.split("_")[-1]
+            # Identificar sensor
+            sensor_name = col.split("_")[-1]  # Ej: 'Izquierda_S3' → 'S3'
             sensor_num = int(sensor_name[1:])
+
             es_antepie = sensor_num in [3, 4]
 
             diff = np.diff(mask.astype(int))
             starts = np.where(diff == 1)[0] + 1
             ends = np.where(diff == -1)[0] + 1
+
             if mask.iloc[0]:
                 starts = np.insert(starts, 0, 0)
             if mask.iloc[-1]:
                 ends = np.append(ends, len(serie))
 
-            serie_suave = serie.copy().astype(float)
+            serie_suave = serie.copy()
 
             for s, e in zip(starts, ends):
                 i0 = max(s - margen, 0)
                 i1 = min(e + margen, len(serie) - 1)
                 idx_parche = np.arange(i0, i1 + 1)
                 t_parche = serie.index[idx_parche]
+
                 y0 = serie.iloc[i0]
                 y1 = serie.iloc[i1]
 
                 if es_antepie:
                     y_mid = max(y0, y1) + delta
+
+                
+                if es_antepie:
                     x = [t_parche[0], t_parche[len(t_parche)//2], t_parche[-1]]
                     y = [y0, y_mid, y1]
                 else:
                     x = [t_parche[0], t_parche[-1]]
                     y = [y0, y1]
-
+                
                 interpolador = PchipInterpolator(x, y)
                 serie_suave.loc[t_parche] = interpolador(t_parche)
 
             df_out[col] = serie_suave
+
         return df_out
 
     # === Filtro Savitzky-Golay luego de spline ===
@@ -169,32 +191,48 @@ def preprocesar_datos(raw_der, raw_izq, xx_data, yy_data):
     filt_der = []
     filt_izq = []
 
+    # --- IZQUIERDO: Butterworth -> spline -> SavGol ---
     for df in dataframes_izq:
-        df_suave = suavizar_saturacion_df_spline_direccion(df, margen=2, delta=2, saturacion=25, lado='I')
+        # 1) Butterworth columna a columna (con clip a 0)
+        df_bw = df.copy()
+        for col in df_bw.columns:
+            df_bw[col] = apply_lowpass_filter(df_bw[col], cutoff_frequency, sampling_rate)
+
+        # 2) Suavizado de mesetas con spline (sobre la salida del Butterworth)
+        df_suave = suavizar_saturacion_df_spline_direccion(
+            df_bw, margen=2, delta=2, saturacion=25, lado='I'
+        )
+
+        # 3) Savitzky–Golay final
         df_filtered = df_suave.copy()
         for col in df_filtered.columns:
-            df_filtered[col] = savgol_filter(
-                apply_lowpass_filter(df_filtered[col], cutoff_frequency, sampling_rate),
-                window_length=window_length, polyorder=polyorder
-            )
+            df_filtered[col] = savgol_filter(df_filtered[col], window_length=window_length, polyorder=polyorder)
+
         filt_izq.append(df_filtered)
 
+    # --- DERECHO: Butterworth -> spline -> SavGol ---
     for df in dataframes_der:
-        df_suave = suavizar_saturacion_df_spline_direccion(df, margen=1, delta=1, saturacion=25, lado='D')
+        df_bw = df.copy()
+        for col in df_bw.columns:
+            df_bw[col] = apply_lowpass_filter(df_bw[col], cutoff_frequency, sampling_rate)
+
+        df_suave = suavizar_saturacion_df_spline_direccion(
+            df_bw, margen=1, delta=1, saturacion=25, lado='D'
+        )
+
         df_filtered = df_suave.copy()
         for col in df_filtered.columns:
-            df_filtered[col] = savgol_filter(
-                apply_lowpass_filter(df_filtered[col], cutoff_frequency, sampling_rate),
-                window_length=window_length, polyorder=polyorder
-            )
+            df_filtered[col] = savgol_filter(df_filtered[col], window_length=window_length, polyorder=polyorder)
+
         filt_der.append(df_filtered)
 
     # === Suma de sensores ===
     sum_der = [df.sum(axis=1).to_frame(name="Suma") for df in filt_der]
     sum_izq = [df.sum(axis=1).to_frame(name="Suma") for df in filt_izq]
+    sum_der[0].index = sum_der[0].index.round(3)
+    sum_izq[0].index = sum_izq[0].index.round(3)
+
     
-    print(filt_der)
-    print(filt_izq)
 
     return filt_der, filt_izq, sum_der, sum_izq
 

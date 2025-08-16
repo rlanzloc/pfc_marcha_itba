@@ -12,6 +12,7 @@ from io import StringIO
 import plotly.express as px  
 import time
 import traceback
+from dash import no_update
 
 dash.register_page(__name__, path="/pg4", name='Análisis Cinético', icon="file-earmark-text")
 from analisis_plantillas import procesar_archivo_plantillas
@@ -32,7 +33,6 @@ lock = threading.Lock()
 
 def leer_datos(arduino, dataframe, pie):
     global reading
-    print(f"🧵 Hilo iniciado para {pie}")
     while True:
         if reading and arduino and arduino.in_waiting > 0:
             try:
@@ -93,19 +93,61 @@ def inicializar_puertos_y_hilos():
         hilos_lanzados = True
 
 
+# ── Encabezado compacto: inputs (izquierda) + título ───────────────────────────
+header_compacto = html.Div([
+    html.Div([
+        dbc.InputGroup([
+            dbc.Input(id="input-nombre", placeholder="Nombre", type="text",
+                      size="sm", style={"flex": "0 0 100px"}),   # ⬅️ clave
+            dbc.Input(id="input-edad", placeholder="Edad", type="number", min=0, step=1,
+                      size="sm", style={"flex": "0 0 70px", "textAlign": "center"}),
+            dbc.Input(id="input-peso", placeholder="Peso", type="number", min=0, step=0.1,
+                      size="sm", style={"flex": "0 0 70px", "textAlign": "center"}),
+            dbc.Button("Guardar", id="btn-save-patient", size="sm", color="primary",
+                       style={"flex": "0 0 auto"})
+        ], size="sm", className="me-2"),
+
+        html.Small(id="patient-saved-msg", children="", style={"color": "#6c757d", "marginTop": "4px", "display": "block"}),
+    ], style={"display": "flex", "flexDirection": "column", "alignItems": "flex-start", "gap": "4px"}),
+
+    html.H1("Análisis Cinético", style={"margin": "6px 0 0 0", "fontWeight": "700", "color": "#2c3e50",
+                                        "lineHeight": "1.1", "textAlign": "center", "width": "100%"}),
+], style={"display": "flex", "flexDirection": "column", "gap": "8px", "marginBottom": "8px"})
+
+
+
+
+
 layout = html.Div([
+    dcc.Store(id='patient-info', storage_type='session'),
     dcc.Store(id='session-stored-cinetico', storage_type='session'),
+    header_compacto,
     
-    dbc.Col(html.H1("Análisis Cinético", className="text-center mb-4", style={
-        'color': '#2c3e50',
-        'fontWeight': '600',
-        'marginTop': '10px'
-    })),
-
-    html.Hr(),
-
     # Pestañas
-    dcc.Tabs(id='tabs', value='tab-sensores', children=[
+    dcc.Tabs(id='tabs-cinetico', value='tab-csv', children=[
+        dcc.Tab(label='Importar CSV', value='tab-csv',
+            style={
+                'borderTop': '1px solid #d6d6d6',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                'color': '#555'
+            },
+            selected_style={
+                'borderTop': '2px solid #428bca',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'white',
+                'color': '#2c3e50'
+            }),   
         dcc.Tab(label='Lectura en Vivo de Sensores', value='tab-sensores',
             style={
                 'borderTop': '1px solid #d6d6d6',
@@ -129,29 +171,7 @@ layout = html.Div([
                 'backgroundColor': 'white',
                 'color': '#2c3e50'
             }),
-        dcc.Tab(label='Importar CSV', value='tab-csv',
-            style={
-                'borderTop': '1px solid #d6d6d6',
-                'borderLeft': '1px solid #d6d6d6',
-                'borderRight': '1px solid #d6d6d6',
-                'borderBottom': 'none',
-                'padding': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold',
-                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
-                'color': '#555'
-            },
-            selected_style={
-                'borderTop': '2px solid #428bca',
-                'borderLeft': '1px solid #d6d6d6',
-                'borderRight': '1px solid #d6d6d6',
-                'borderBottom': 'none',
-                'padding': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold',
-                'backgroundColor': 'white',
-                'color': '#2c3e50'
-            }),
+
     ]),
 
     html.Div(id='tabs-content'),
@@ -160,112 +180,117 @@ layout = html.Div([
 
 
 def render_tab(tab):
-    print(f"🧱 render_tab ejecutado: {tab}")
-    if tab == 'tab-sensores':
-        return html.Div([
-            html.Div([
-                html.Span("Estado de puertos:", id='port-status-label', style={'marginRight': '5px'}),
-                html.Span(id='port-status-dynamic', children="Actualizando..."),
-                html.Button("🔄", id='refresh-button', n_clicks=0, title="Actualizar", style={
-                    'border': 'none',
-                    'background': 'none',
-                    'cursor': 'pointer',
-                    'fontSize': '20px',
-                    'marginLeft': '8px'
-                }),
-                html.Div(style={'flex': '1'}),
-                html.Button('Iniciar Lectura', id='start-button', n_clicks=0, disabled=True, style={
-                    'backgroundColor': '#428bca',
-                    'color': 'white',
-                    'marginLeft': '10px'
-                }),
-                html.Button('Finalizar Lectura', id='stop-button', n_clicks=0, disabled=True, style={
-                    'backgroundColor': '#428bca',
-                    'color': 'white',
-                    'marginLeft': '10px'
-                })
-            ], style={
-                'display': 'flex',
-                'alignItems': 'center',
-                'justifyContent': 'space-between',
-                'flexWrap': 'wrap',
-                'gap': '10px',
-                'marginBottom': '10px',
-                'width': '100%'
-            }),
 
-            html.Div(id='reading-status', style={'width': '100%'})
+    # ---- Contenido por solapa ----
+    if tab == 'tab-sensores':
+        # Cabecera de controles + card a la derecha
+        header_row = html.Div([
+            html.Div([
+                html.Div([
+                    html.Span("Estado de puertos:", id='port-status-label', style={'marginRight': '5px'}),
+                    html.Span(id='port-status-dynamic', children="Actualizando..."),
+                    html.Button("🔄", id='refresh-button', n_clicks=0, title="Actualizar", style={
+                        'border': 'none','background': 'none','cursor': 'pointer',
+                        'fontSize': '20px','marginLeft': '8px'
+                    }),
+                    html.Div(style={'flex': '1'}),
+                    html.Button('Iniciar Lectura', id='start-button', n_clicks=0, disabled=True, style={
+                        'backgroundColor': '#428bca','color': 'white','marginLeft': '10px'
+                    }),
+                    html.Button('Finalizar Lectura', id='stop-button', n_clicks=0, disabled=True, style={
+                        'backgroundColor': '#428bca','color': 'white','marginLeft': '10px'
+                    })
+                ], style={
+                    'display': 'flex','alignItems': 'center','flexWrap': 'wrap',
+                    'gap': '10px','marginBottom': '10px','width': '100%'
+                }),
+                html.Div(id='reading-status', style={'width': '100%'})
+            ], style={'flex': '1 1 auto', 'minWidth': 0})
+
+        ], style={
+            'display': 'flex','alignItems': 'flex-start',
+            'justifyContent': 'space-between','gap': '16px','flexWrap': 'wrap',
+            'marginBottom': '8px'
+        })
+
+        # Gráficos (si tu solapa de lectura los muestra)
+        graficos_row = html.Div([
+            # ← si luego querés mostrar gráficos también en esta solapa, ponelos acá
         ])
+
+        return html.Div([header_row, graficos_row])
 
     elif tab == 'tab-csv':
-        return html.Div([
-            dcc.Upload(
-                id='upload-csv',
-                children=html.Div(['Arrastra o selecciona archivos para pie Izquierdo y Derecho']),
-                style={
-                    'width': '100%',
-                    'height': '60px',
-                    'lineHeight': '60px',
-                    'borderWidth': '1px',
-                    'borderStyle': 'dashed',
-                    'borderRadius': '5px',
-                    'textAlign': 'center',
-                    'marginTop': '10px',
-                    'marginBottom': '10px',
-                    'cursor': 'pointer',
-                    'backgroundColor': 'rgba(66, 139, 202, 0.1)',
-                    'borderColor': '#428bca',
-                    'color': '#428bca',
-                    'transition': 'all 0.3s'
-                },
-                multiple=True
-            ),
-            html.Div(id='csv-validation'),
-
-            # 🎯 GRÁFICOS CINÉTICOS - TODOS CON go.Figure() y bien definidos
+        header_row = html.Div([
             html.Div([
+                dcc.Upload(
+                    id='upload-csv',
+                    children=html.Div(['Arrastra o selecciona archivos para pie Izquierdo y Derecho']),
+                    style={
+                        'width': '100%','height': '60px','lineHeight': '60px',
+                        'borderWidth': '1px','borderStyle': 'dashed','borderRadius': '5px',
+                        'textAlign': 'center','marginTop': '10px','marginBottom': '10px',
+                        'cursor': 'pointer','backgroundColor': 'rgba(66, 139, 202, 0.1)',
+                        'borderColor': '#428bca','color': '#428bca','transition': 'all 0.3s'
+                    },
+                    multiple=True
+                ),
+                html.Div(id='csv-validation'),
+            ], style={'flex': '1 1 auto', 'minWidth': 0})
 
-                html.H4("Curvas de ciclos válidos e inválidos"),
-                dcc.Graph(id='fig-ciclos', figure=go.Figure(), style={'display': 'none', 'margin-bottom': '30px'}),
 
-                html.Div([
-                    html.Div([
-                        html.H4("Fase de apoyo - Pie izquierdo"),
-                        dcc.Graph(id='fig-fases-izq', figure=go.Figure(), style={'display': 'none'})
-                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'}),
+        ], style={
+            'display': 'flex','alignItems': 'flex-start',
+            'justifyContent': 'space-between','gap': '16px','flexWrap': 'wrap',
+            'marginBottom': '8px'
+        })
 
-                    html.Div([
-                        html.H4("Fase de apoyo - Pie derecho"),
-                        dcc.Graph(id='fig-fases-der', figure=go.Figure(), style={'display': 'none'})
-                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'})
-                ]),
-
-                html.Div([
-                    html.H4("Trayectoria del centro de presión (COP)"),
-                    dcc.Graph(id='fig-cop', figure=go.Figure(), style={'display': 'none', 'margin-bottom': '30px'})
-                ]),
-
-                html.Div([
-                    html.Div([
-                        html.H4("Aporte promedio por fase - Pie izquierdo"),
-                        dcc.Graph(id='fig-aporte-izq', figure=go.Figure(), style={'display': 'none'})
-                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'}),
-
-                    html.Div([
-                        html.H4("Aporte promedio por fase - Pie derecho"),
-                        dcc.Graph(id='fig-aporte-der', figure=go.Figure(), style={'display': 'none'})
-                    ], style={'width': '48%', 'display': 'inline-block', 'margin-bottom': '30px'})
-                ])
-            ])
-
+        graficos_row = html.Div([
+            # 🎯 GRÁFICOS CINÉTICOS
+            html.Div([
+                html.Div([ dcc.Graph(id='fig-ciclos', style={'height':'320px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+                html.Div([ dcc.Graph(id='fig-fases',  style={'height':'480px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+                html.Div([ dcc.Graph(id='fig-cop',    style={'height':'100%','width':'100%'}, config={'responsive': True}) ], className='graph-card full cop-card', style={'height': '600px', 'overflow': 'hidden', 'minWidth': 0}),
+                html.Div([ dcc.Graph(id='fig-aporte-izq', style={'height':'360px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+                html.Div([ dcc.Graph(id='fig-aporte-der', style={'height':'360px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+            ], className='graph-grid')
         ])
 
+        return html.Div([header_row, graficos_row])
+
+    # Fallback
+    return html.Div()
+
+
+@callback(
+    Output('patient-info', 'data'),
+    Output('patient-saved-msg', 'children'),
+    Output('input-nombre', 'value'),
+    Output('input-edad', 'value'),
+    Output('input-peso', 'value'),
+    Output('store-patient-info', 'data'),
+    Input('btn-save-patient', 'n_clicks'),
+    State('input-nombre', 'value'),
+    State('input-edad', 'value'),
+    State('input-peso', 'value'),
+    prevent_initial_call=True
+)
+def save_patient(n, nombre, edad, peso):
+    data = {
+        'nombre': (nombre or '').strip(),
+        'edad': int(edad) if edad not in (None, "") else None,
+        'peso': float(peso) if peso not in (None, "") else None
+    }
+    msg = f"Datos: {data['nombre'] or '—'} • {data['edad'] or '—'} años • {data['peso'] or '—'} kg" \
+          if any(v not in (None, '') for v in data.values()) else "Sin datos"
+    # limpiamos inputs y copiamos al store global
+    return data, msg, "", None, None, data
 
 
 # ---------- Callback para mostrar contenido de pestañas ----------
 @callback(
     Output('tabs-content', 'children'),
-    Input('tabs', 'value'),
+    Input('tabs-cinetico', 'value'),
     #prevent_initial_call=True
 )
 def render_content(tab):
@@ -377,15 +402,16 @@ def controlar_puertos_y_lectura(n_start, n_stop, n_refresh):
 
             if not df_izq.empty:
                 df_izq.to_csv(directorio_guardado / f"izquierda_{timestamp}.csv", index=False)
-                print("✅ Archivo pie izquierdo guardado.")
+               
             else:
                 print("⚠️ No se guardó archivo izquierdo (vacío).")
 
             if not df_der.empty:
                 df_der.to_csv(directorio_guardado / f"derecha_{timestamp}.csv", index=False)
-                print("✅ Archivo pie derecho guardado.")
+               
             else:
                 print("⚠️ No se guardó archivo derecho (vacío).")
+
 
             session_data = {
                 "izq": df_izq.to_json(date_format='iso', orient='split'),
@@ -581,27 +607,27 @@ def handle_csv_upload(contents, filename, stored_data):
 # ---------- Mostrar gráficos con los datos cargados ----------
 @callback(
     Output('fig-ciclos', 'figure'), Output('fig-ciclos', 'style'),
-    Output('fig-fases-izq', 'figure'), Output('fig-fases-izq', 'style'),
-    Output('fig-fases-der', 'figure'), Output('fig-fases-der', 'style'),
-    Output('fig-cop', 'figure'), Output('fig-cop', 'style'),
+    Output('fig-fases', 'figure'),  Output('fig-fases', 'style'),
+    Output('fig-cop', 'figure'),    Output('fig-cop', 'style'),
     Output('fig-aporte-izq', 'figure'), Output('fig-aporte-izq', 'style'),
     Output('fig-aporte-der', 'figure'), Output('fig-aporte-der', 'style'),
+    Output('store-figs-cinetico', 'data'), 
     Input('session-stored-cinetico', 'data'),
-    Input('tabs', 'value'),
+    Input('tabs-cinetico', 'value'),
+    Input('patient-info', 'data'),
     State('session-stored-cinetico', 'data')
 )
-def actualizar_graficos_cineticos(trigger, tab_value, stored_data):
+def actualizar_graficos_cineticos(trigger, tab_value, patient_data, stored_data):
 
     style_hide = {'display': 'none'}
-    style_show = {'display': 'block', 'width': '95%', 'height': '400px', 'margin': 'auto'}
-    fallback = [go.Figure(), style_hide] * 6
+    style_show = {'display': 'block', 'width': '100%', 'height': '480px', 'margin': 'auto'}
+    style_cop  = {'display': 'block', 'width': '100%', 'height': '100%'}  # el Graph llena la card
 
-    print(f"🔄 callback activado | tab = {tab_value} | stored_data keys = {list(stored_data.keys()) if stored_data else 'None'}")
+    # 🔧 fallback de EXACTAMENTE 10 items (5 pares fig+style)
+    fallback = [go.Figure(), style_hide] * 5 + [no_update]
 
     if tab_value != 'tab-csv' or not stored_data:
-        print("↩️ devolviendo fallback por tab o datos vacíos")
-        return [go.Figure(), {'display': 'none'}] * 6
-
+        return [go.Figure(), {'display': 'none'}] * 5 + [no_update]
     try:
         # Verificar que los datos tienen contenido válido
         if not stored_data.get('izq') or not stored_data.get('der'):
@@ -611,22 +637,32 @@ def actualizar_graficos_cineticos(trigger, tab_value, stored_data):
         raw_der = stored_data.get('der')
 
         if not raw_izq or not raw_der:
-            print("⚠️ raw_izq o raw_der vacíos")
             return fallback
 
         df_izq = pd.read_json(StringIO(raw_izq), orient='split')
         df_der = pd.read_json(StringIO(raw_der), orient='split')
 
         if df_izq.empty or df_der.empty:
-            print("⚠️ df_izq o df_der vacíos")
             return fallback
+    
 
         from analisis_plantillas import procesar_archivo_plantillas
         from generar_figuras_cinetico import generar_figuras_cinetico
 
-        print("🔄 Procesando archivo plantillas...")
+
         data_proc = procesar_archivo_plantillas(df_der, df_izq)
-        print("📦 Claves de data_proc:", list(data_proc.keys()))
+        
+        peso_kg = None
+        if isinstance(patient_data, dict):
+            peso_kg = patient_data.get('peso', None)
+
+        # Hacelo disponible para las funciones de downstream
+        data_proc['paciente'] = {
+            'nombre': (patient_data or {}).get('nombre'),
+            'edad':   (patient_data or {}).get('edad'),
+            'peso_kg': peso_kg
+        }
+
         # Desempaquetar listas de 1 elemento (solo si corresponde)
         evitar_desempaquetar = {
             'resultados_der', 'resultados_izq',
@@ -640,35 +676,72 @@ def actualizar_graficos_cineticos(trigger, tab_value, stored_data):
 
         for key in data_proc:
             valor = data_proc[key]
-            print(f"🔍 Revisando clave: {key} | tipo: {type(valor)}")
 
             if isinstance(valor, list) and len(valor) == 1 and key not in evitar_desempaquetar:
                 if isinstance(valor[0], (pd.DataFrame, list, dict)):
                     data_proc[key] = valor[0]
-                    print(f"   ↪️ Desempaquetado '{key}'")
+       
+                    
 
-
-        print("🎨 Llamando a generar_figuras_cinetico()")
-
-        fig_ciclos, fig_fases_izq, fig_fases_der, fig_cop, fig_aporte_izq, fig_aporte_der = generar_figuras_cinetico(data_proc)
-        print("✅ Figuras generadas correctamente.")
+        fig_ciclos, fig_fases, fig_cop, fig_aporte_izq, fig_aporte_der = generar_figuras_cinetico(data_proc)
+ 
+        
+        figs_payload = {
+            "Ciclos vGRF":          {"title": fig_ciclos.layout.title.text if fig_ciclos.layout.title else "Ciclos vGRF", "json": fig_ciclos.to_json()},
+            "Fases vGRF":           {"title": fig_fases.layout.title.text  if fig_fases.layout.title  else "Fases vGRF",  "json": fig_fases.to_json()},
+            "Trayectoria COP":      {"title": fig_cop.layout.title.text    if fig_cop.layout.title    else "Trayectoria COP", "json": fig_cop.to_json()},
+            "Aporte Izquierdo (%)": {"title": fig_aporte_izq.layout.title.text if fig_aporte_izq.layout.title else "Aporte Izquierdo (%)", "json": fig_aporte_izq.to_json()},
+            "Aporte Derecho (%)":   {"title": fig_aporte_der.layout.title.text if fig_aporte_der.layout.title else "Aporte Derecho (%)", "json": fig_aporte_der.to_json()},
+        }
 
         return [
-            fig_ciclos, style_show,
-            fig_fases_izq, style_show,
-            fig_fases_der, style_show,
-            fig_cop, style_show,
+            fig_ciclos,     style_show,
+            fig_fases,      style_show,
+            fig_cop,        style_cop,   
             fig_aporte_izq, style_show,
-            fig_aporte_der, style_show
+            fig_aporte_der, style_show, 
+            figs_payload,
         ]
 
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         fig_error = go.Figure()
         fig_error.update_layout(title=f"Error: {str(e)}")
-        return [fig_error, {'display': 'block'}] * 6
+        return [fig_error, {'display': 'block'}] * 5 + [no_update]
 
 
+@callback(
+    Output('store-figs-cinetico-2', 'data'),
+    Input('fig-ciclos', 'figure'),
+    Input('fig-fases', 'figure'),
+    Input('fig-cop', 'figure'),
+    Input('fig-aporte-izq', 'figure'),
+    Input('fig-aporte-der', 'figure'),
+    prevent_initial_call=True
+)
+def harvest_cinetico(fig_ciclos, fig_fases, fig_cop, fig_ap_izq, fig_ap_der):
+    figs = [
+        ("Ciclos detectados (vGRF por paso)", fig_ciclos),
+        ("vGRF normalizado – Detección de eventos y subfases", fig_fases),
+        ("Trayectoria del Centro de Presión (COP)", fig_cop),
+        ("Aporte porcentual por sensor – Pie Izquierdo", fig_ap_izq),
+        ("Aporte porcentual por sensor – Pie Derecho", fig_ap_der),
+    ]
+
+    payload = {}
+    for default_title, f in figs:
+        if not f:
+            continue
+        # extraer título si viene en layout
+        title = default_title
+        t = f.get("layout", {}).get("title")
+        if isinstance(t, dict):
+            title = (t.get("text") or default_title).strip()
+        elif isinstance(t, str) and t.strip():
+            title = t.strip()
+        payload[title] = {"title": title, "json": json.dumps(f)}
+
+    return payload or no_update
 
 
 

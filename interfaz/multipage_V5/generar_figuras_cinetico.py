@@ -12,16 +12,11 @@ from matplotlib import cm
 from matplotlib import colors as mcolors
 from plotly.subplots import make_subplots
 import traceback
+from plotly.colors import sample_colorscale
 
 def generar_figuras_cinetico(data):
-    print("🧪 Entrando a generar_figuras_cinetico()")
     BW = 52  # peso corporal fijo para normalización
-    
-    # Mostrar datos de diagnóstico
-    print("📊 Diagnóstico de datos recibidos:")
-    print(f"Suma derecha: {data['sum_der']}")
-    print(f"Suma izquierda: {data['sum_izq']}")
-    
+
     # Asegurar que los datos sean listas aunque haya un solo elemento
     def ensure_list(x):
         return x if isinstance(x, list) else [x]
@@ -31,240 +26,337 @@ def generar_figuras_cinetico(data):
     has_valid_izq = data['resultados_izq'][0]['valid'] if 'resultados_izq' in data else False
     
     if not has_valid_der and not has_valid_izq:
-        print("⚠️ No hay ciclos válidos para graficar")
         fig_empty = go.Figure()
         fig_empty.update_layout(title="No se detectaron ciclos válidos")
         return [fig_empty] * 6
-
-    def plot_ciclos_validos_invalidos(sum_izq, sum_der, res_izq, res_der, idx_min_izq, idx_min_der):
-        print("🧪 Entrando a plot_ciclos_validos_invalidos()")
+    
+    def plot_ciclos_validos_invalidos(sum_izq, sum_der,
+                                    res_izq, res_der,
+                                    idx_min_izq, idx_min_der):
+        import plotly.graph_objects as go
         fig = go.Figure()
+        BW = 52.0
 
-        # 🛡️ Validación robusta para idx_min_der
-        if idx_min_der and isinstance(idx_min_der, list):
-            if all(isinstance(x, (int, float)) for x in idx_min_der):
-                if len(idx_min_der) % 2 != 0:
-                    print(f"❌ idx_min_der tiene cantidad impar de índices: {len(idx_min_der)}. Se saltea.")
-                    return fig
+        # si vienen como [[...]], desempaquetar
+        def first_or_self(x):
+            return x[0] if isinstance(x, list) and x and isinstance(x[0], list) else x
+        idx_min_der = first_or_self(idx_min_der)
+        idx_min_izq = first_or_self(idx_min_izq)
 
-        for ciclo in res_der['details']:
-            j = ciclo['cycle_num']
+        col_der = sum_der.columns[0]; col_izq = sum_izq.columns[0]
+        used = {"Der_ok": False, "Der_bad": False, "Izq_ok": False, "Izq_bad": False}
+
+        # Derecho (opacidad 1.0)
+        for det in res_der['details']:
+            j = det['cycle_num']
             if j+1 >= len(idx_min_der): continue
-            i0 = idx_min_der[j]
-            i1 = idx_min_der[j+1]
-            tramo = sum_der.loc[i0:i1, 0] / BW
-            color = 'green' if ciclo['is_valid'] else 'red'
-            fig.add_trace(go.Scatter(
-                x=tramo.index, y=tramo.values,
-                mode='lines',
-                line=dict(color=color, width=2),
-                name='Derecho',
-                opacity=1.0 if ciclo['is_valid'] else 0.5,
-                showlegend=False
-            ))
+            t0 = sum_der.index[int(idx_min_der[j])]
+            t1 = sum_der.index[int(idx_min_der[j+1])]
+            y = (sum_der.loc[t0:t1, col_der] / BW)
+            color = '#2ca02c' if det['is_valid'] else '#d62728'
+            key   = 'Der_ok'  if det['is_valid'] else 'Der_bad'
+            name  = 'Der Válido'  if det['is_valid'] else 'Der Inválido'
+            fig.add_trace(go.Scatter(x=y.index, y=y.values, mode='lines',
+                                    line=dict(color=color, width=2.5),
+                                    opacity=1.0,
+                                    name=None if used[key] else name,
+                                    showlegend=(not used[key])))
+            used[key] = True
 
-        # 🛡️ Validación robusta para idx_min_izq
-        if idx_min_izq and isinstance(idx_min_izq, list):
-            if all(isinstance(x, (int, float)) for x in idx_min_izq):
-                if len(idx_min_izq) % 2 != 0:
-                    print(f"❌ idx_min_izq tiene cantidad impar de índices: {len(idx_min_izq)}. Se saltea.")
-                    return fig
-
-        for ciclo in res_izq['details']:
-            j = ciclo['cycle_num']
+        # Izquierdo (opacidad 0.5)
+        for det in res_izq['details']:
+            j = det['cycle_num']
             if j+1 >= len(idx_min_izq): continue
-            i0 = idx_min_izq[j]
-            i1 = idx_min_izq[j+1]
-            tramo = sum_izq.loc[i0:i1, 0] / BW
-            color = 'green' if ciclo['is_valid'] else 'red'
-            fig.add_trace(go.Scatter(
-                x=tramo.index, y=tramo.values,
-                mode='lines',
-                line=dict(color=color, width=2),
-                name='Izquierdo',
-                opacity=0.6,
-                showlegend=False
-            ))
+            t0 = sum_izq.index[int(idx_min_izq[j])]
+            t1 = sum_izq.index[int(idx_min_izq[j+1])]
+            y = (sum_izq.loc[t0:t1, col_izq] / BW)
+            color = '#2ca02c' if det['is_valid'] else '#d62728'
+            key   = 'Izq_ok'  if det['is_valid'] else 'Izq_bad'
+            name  = 'Izq Válido'  if det['is_valid'] else 'Izq Inválido'
+            fig.add_trace(go.Scatter(x=y.index, y=y.values, mode='lines',
+                                    line=dict(color=color, width=2.5),
+                                    opacity=0.5,
+                                    name=None if used[key] else name,
+                                    showlegend=(not used[key])))
+            used[key] = True
 
-        fig.update_layout(
-            title="Ciclos Válidos / Inválidos",
-            xaxis_title="Tiempo (s)",
-            yaxis_title="vGRF (%BW)",
-            template="plotly_white"
-        )
+        #xmin = min(sum_der.index.min(), sum_izq.index.min())
+        #xmax = max(sum_der.index.max(), sum_izq.index.max())
+        fig.update_layout(title=dict(text="<b>Ciclos válidos e inválidos (vGRF)</b>"),
+                        xaxis_title="Tiempo (s)", yaxis_title="vGRF (%BW)",
+                        template="plotly_white",
+                        legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='right', x=1))
+        #fig.update_xaxes(range=[xmin, xmax])
         return fig
 
 
 
-
-
     def plot_vgrf_por_fases(df_sensores_list, resultados, indices_ciclos,
-                                    peso_kg=52, lado="R"):
-        print("🧪 Entrando a plot_vgrf_por_fases()")
-        """
-        Genera una figura interactiva en Plotly con vGRF normalizado y fases de apoyo.
-        """
+                        peso_kg=52, lado="R"):
+
+    
+
+        # Normalizar entradas
+        if hasattr(df_sensores_list, "sum"):  # DataFrame -> [DF]
+            df_sensores_list = [df_sensores_list]
+        if isinstance(resultados, dict):      # dict -> [dict]
+            resultados = [resultados]
+
+        def normalize_indices(obj):
+            # [[(t0,t1), ...]]
+            if isinstance(obj, list) and obj and isinstance(obj[0], list) and obj[0] and isinstance(obj[0][0], tuple):
+                return obj
+            # [(t0,t1), ...] -> [[...]]
+            if isinstance(obj, list) and obj and isinstance(obj[0], tuple):
+                return [obj]
+            # (t0,t1) -> [[(t0,t1)]]
+            if isinstance(obj, tuple) and len(obj) == 2:
+                return [[obj]]
+            # [t0, t1, t2, t3, ...] -> [[(t0,t1), (t2,t3), ...]]
+            if isinstance(obj, list) and obj and isinstance(obj[0], (float, int)):
+                paired = list(zip(obj[::2], obj[1::2]))
+                return [paired]
+            return [[]]
+
+        indices_ciclos = normalize_indices(indices_ciclos)
 
         sufijo = "Derecha" if lado.upper() == "R" else "Izquierda"
         colores_fases = {
             'loading_response': '#9467bd',
-            'midstance': '#d62728',
-            'terminal_stance': '#e377c2',
-            'pre_swing': '#2ca02c'
+            'midstance':        '#d62728',
+            'terminal_stance':  '#e377c2',
+            'pre_swing':        '#2ca02c'
         }
+
+        def idx_nearest(index, t):
+            try:
+                return int(index.get_loc(t))
+            except Exception:
+                try:
+                    pos = index.get_indexer([t], method='nearest')[0]
+                except Exception:
+                    vals = np.asarray(index.values, dtype=float)
+                    pos = np.searchsorted(vals, float(t))
+                if pos < 0: pos = 0
+                if pos >= len(index): pos = len(index) - 1
+                return int(pos)
 
         figuras = []
 
-        print("🧩 Len df_sensores_list:", len(df_sensores_list))
-        print("🧩 Len resultados:", len(resultados))
-        print("🧩 Len indices_ciclos:", len(indices_ciclos))
+        for pasada_idx in range(min(len(df_sensores_list), len(resultados), len(indices_ciclos))):
+            df_sensores    = df_sensores_list[pasada_idx]
+            resultado_paso = resultados[pasada_idx]
+            indices_paso   = indices_ciclos[pasada_idx]  # lista de (t_ini, t_fin)
 
-        for pasada_idx, (df_sensores, resultado_paso, indices_paso) in enumerate(zip(df_sensores_list, resultados, indices_ciclos)):
-            print(f"🔍 resultado_paso keys: {list(resultado_paso.keys())}")
-            print(f"🔍 resultado_paso completo:\n{resultado_paso}")
+            # si viene raro, vuelve a normalizar a lista de pares
+            if indices_paso and isinstance(indices_paso, tuple) and len(indices_paso) == 2:
+                indices_paso = [indices_paso]
+            elif indices_paso and isinstance(indices_paso, list) and indices_paso and isinstance(indices_paso[0], (float, int)):
+                indices_paso = list(zip(indices_paso[::2], indices_paso[1::2]))
+
+            details = resultado_paso.get('details', [])
 
             fig = go.Figure()
             matriz_ciclos = []
-
-            fases_usadas = {fase: False for fase in colores_fases.keys()}
+            fases_usadas = {fase: False for fase in colores_fases}
             pico_label_usado = False
             valle_label_usado = False
 
-            print(f"📊 Pasada {pasada_idx+1} — ciclos detectados: {len(resultado_paso['details'])}")
-            for i, ciclo in enumerate(resultado_paso['details']):
-                estado = "✅ válido" if ciclo["is_valid"] else "❌ inválido"
-                print(f"   • Ciclo {i}: {estado}, picos: {len(ciclo.get('peaks', []))}, valles: {len(ciclo.get('valleys', []))}")
+            # recorremos TODOS los detalles y buscamos (t_ini,t_fin) de dos fuentes
+            usados = 0
+            for j in range(len(details)):
+                info = details[j]
+                if not info.get('is_valid', False):
+                    continue
 
-            # ✅ Validación robusta de formato de índices
-            if indices_paso and isinstance(indices_paso, list):
-                if all(isinstance(x, (int, float)) for x in indices_paso):
-                    if len(indices_paso) % 2 == 0:
-                        print("⚠️ indices_paso vino como lista de números, reempaquetando en tuplas...")
-                        indices_paso = list(zip(indices_paso[::2], indices_paso[1::2]))
-                    else:
-                        print(f"❌ Cantidad impar de índices. Revisión necesaria: {indices_paso}")
-                        continue
-                elif all(isinstance(x, (list, tuple)) and len(x) == 2 for x in indices_paso):
-                    pass  # ya está bien
+                # 1) ideal: viene de indices_paso
+                if j < len(indices_paso) and isinstance(indices_paso[j], (list, tuple)) and len(indices_paso[j]) == 2:
+                    inicio, fin = indices_paso[j]
+                # 2) fallback: usar lo que trae el detalle (si está)
+                elif 'start_index' in info and 'end_index' in info:
+                    inicio, fin = info['start_index'], info['end_index']
                 else:
-                    print(f"❌ indices_paso tiene formato no esperado: {indices_paso}")
                     continue
 
-            for ciclo_info, indices_ciclo in zip(resultado_paso['details'], indices_paso):
-                if not isinstance(indices_ciclo, (list, tuple)) or len(indices_ciclo) != 2:
-                    print(f"⚠️ Ciclo inválido o mal formado: {indices_ciclo}")
-                    continue
-
-                print(f"🔎 tipo de indices_ciclo: {type(indices_ciclo)}, valor: {indices_ciclo}")
-                if not ciclo_info['is_valid']:
-                    continue
-
-                inicio, fin = indices_ciclo[0], indices_ciclo[1]
                 datos_ciclo = df_sensores.loc[inicio:fin].copy()
-                suma_total = datos_ciclo.sum(axis=1).to_frame().loc[:, 0] / peso_kg
-                peaks = ciclo_info['peaks']
-                valleys = ciclo_info['valleys']
-
-                if len(peaks) < 2 or len(valleys) < 1:
+                if len(datos_ciclo) < 5:
                     continue
 
-                p1, p2 = peaks[0], peaks[1]
-                v = valleys[0]
+                # vGRF total / BW
+                suma_total = datos_ciclo.sum(axis=1) / float(peso_kg)
 
-                segmentos = {
-                    'loading_response': (inicio, p1),
-                    'midstance': (p1, v),
-                    'terminal_stance': (v, p2),
-                    'pre_swing': (p2, fin)
-                }
-
+                # 0–100% del apoyo
                 x_original = np.linspace(0, 100, len(suma_total))
-                x_interp = np.linspace(0, 100, 100)
-                f_interp = interp1d(x_original, suma_total.values, kind='linear')
+                x_interp   = np.linspace(0, 100, 100)
+                f_interp   = interp1d(x_original, suma_total.values, kind='linear')
                 ciclo_interp = f_interp(x_interp)
                 matriz_ciclos.append(ciclo_interp)
 
-                for fase, (start, end) in segmentos.items():
-                    print(f"⛏️ buscando get_loc({start}) en datos_ciclo.index: {datos_ciclo.index}")
-                    idx_start = datos_ciclo.index.get_loc(start)
-                    idx_end = datos_ciclo.index.get_loc(end)
-                    x_fase = x_original[idx_start:idx_end+1]
-                    y_fase = suma_total.loc[idx_start:idx_end+1].values
+                # Eventos (o fallback)
+                peaks   = info.get('peaks', [])
+                valleys = info.get('valleys', [])
+                if len(peaks) >= 2 and len(valleys) >= 1:
+                    p1, p2 = peaks[0], peaks[1]
+                    v      = valleys[0]
+                else:
+                    p1 = datos_ciclo.index[int(round(0.30*(len(datos_ciclo)-1)))]
+                    v  = datos_ciclo.index[int(round(0.50*(len(datos_ciclo)-1)))]
+                    p2 = datos_ciclo.index[int(round(0.70*(len(datos_ciclo)-1)))]
+
+                segmentos = {
+                    'loading_response': (inicio, p1),
+                    'midstance':        (p1, v),
+                    'terminal_stance':  (v, p2),
+                    'pre_swing':        (p2, fin)
+                }
+
+                for fase, (t0, t1) in segmentos.items():
+                    i0 = idx_nearest(datos_ciclo.index, t0)
+                    i1 = idx_nearest(datos_ciclo.index, t1)
+                    if i1 < i0:
+                        i0, i1 = i1, i0
+                    x_fase = x_original[i0:i1+1]
+                    y_fase = suma_total.iloc[i0:i1+1].values
                     fig.add_trace(go.Scatter(
                         x=x_fase, y=y_fase,
                         mode='lines',
                         line=dict(color=colores_fases[fase], width=2, dash='dash'),
+                        opacity= 0.7,
                         name=fase.replace("_", " ").capitalize() if not fases_usadas[fase] else None,
                         showlegend=not fases_usadas[fase]
                     ))
                     fases_usadas[fase] = True
 
-                for p in [p1, p2]:
-                    idx_p = datos_ciclo.index.get_loc(p)
+                # marcadores si hay eventos reales
+                if len(peaks) >= 2 and len(valleys) >= 1:
+                    for p in [p1, p2]:
+                        ip = idx_nearest(datos_ciclo.index, p)
+                        fig.add_trace(go.Scatter(
+                            x=[x_original[ip]],
+                            y=[suma_total.iloc[ip]],
+                            mode='markers',
+                            marker=dict(symbol='x', size=8, color='#1f77b4'),
+                            name='Pico' if not pico_label_usado else None,
+                            showlegend=not pico_label_usado
+                        ))
+                        pico_label_usado = True
+                    iv = idx_nearest(datos_ciclo.index, v)
                     fig.add_trace(go.Scatter(
-                        x=[x_original[idx_p]],
-                        y=[suma_total.iloc[idx_p]],
+                        x=[x_original[iv]],
+                        y=[suma_total.iloc[iv]],
                         mode='markers',
-                        marker=dict(symbol='x', color='#1f77b4', size=8),
-                        name='Pico' if not pico_label_usado else None,
-                        showlegend=not pico_label_usado
+                        marker=dict(symbol='circle', size=8, color='#ff7f0e'),
+                        name='Valle' if not valle_label_usado else None,
+                        showlegend=not valle_label_usado
                     ))
-                    pico_label_usado = True
+                    valle_label_usado = True
 
-                idx_v = datos_ciclo.index.get_loc(v)
-                fig.add_trace(go.Scatter(
-                    x=[x_original[idx_v]],
-                    y=[suma_total.iloc[idx_v]],
-                    mode='markers',
-                    marker=dict(symbol='circle', color='#ff7f0e', size=8),
-                    name='Valle' if not valle_label_usado else None,
-                    showlegend=not valle_label_usado
-                ))
-                valle_label_usado = True
+                usados += 1
 
-
+            # Promedio ±1SD de lo que sí se usó
             if matriz_ciclos:
                 matriz = np.vstack(matriz_ciclos)
                 promedio = matriz.mean(axis=0)
-                std = matriz.std(axis=0)
-                fig.add_trace(go.Scatter(
-                    x=x_interp, y=promedio,
-                    mode='lines', name='Promedio',
-                    line=dict(color='black', width=3)
-                ))
-                fig.add_trace(go.Scatter(
-                    x=x_interp, y=promedio + std,
-                    mode='lines', name='+1 SD',
-                    line=dict(color='gray', dash='dot'),
-                    showlegend=False
-                ))
-                fig.add_trace(go.Scatter(
-                    x=x_interp, y=promedio - std,
-                    mode='lines', name='-1 SD',
-                    line=dict(color='gray', dash='dot'),
-                    fill='tonexty',
-                    showlegend=False
-                ))
+                std      = matriz.std(axis=0)
+                fig.add_trace(go.Scatter(x=x_interp, y=promedio, mode='lines',
+                                        name='Promedio', line=dict(color='black', width=3)))
+                fig.add_trace(go.Scatter(x=x_interp, y=promedio + std, mode='lines',
+                                        name='+1 SD', line=dict(color='#7f7f7f', width=1, dash='dot'), opacity= 0.5, showlegend=False))
+                fig.add_trace(go.Scatter(x=x_interp, y=promedio - std, mode='lines',
+                                        name='-1 SD', line=dict(color='#7f7f7f', width=1, dash='dot'), fill='tonexty', fillcolor='rgba(127,127,127,0.20)', opacity=0.5, showlegend=False))
 
             fig.update_layout(
-                title=f"vGRF Normalizado - Pie {sufijo} - Pasada {pasada_idx+1}",
-                xaxis_title="% del ciclo de apoyo",
-                yaxis_title="% BW",
+                title=f"{sufijo} - Ciclo de apoyo normalizado",
+                xaxis_title="% ciclo de apoyo",
+                yaxis_title="vGRF (%BW)",
                 template="plotly_white"
             )
+            fig.update_xaxes(range=[0, 100])  # siempre 0–100%
+
             figuras.append(fig)
 
         if not figuras:
-            print("⚠️ No se generaron figuras en plot_vgrf_por_fases(). Posibles causas:")
-            print("   ↪️ No hay ciclos válidos o no se detectaron picos/valle en los datos.")
-            figuras = [go.Figure()]  # Evita el IndexError
+            figuras = [go.Figure()]
 
         return figuras
+    
+    
+    def combinar_fases_en_uno(fig_fases_izq: go.Figure,
+                          fig_fases_der: go.Figure,
+                          subtitulo_izq: str = "",
+                          subtitulo_der: str = "") -> go.Figure:
+        """
+        Une las fases Izq/Der en un solo Figure con 2 subplots,
+        título general, subtítulos por subplot y leyenda ÚNICA en el medio.
+        """
+        fig = make_subplots(
+            rows=1, cols=2,
+            # el spacing formal lo dejamos chico; vamos a ajustar domains a mano
+            horizontal_spacing=0.08,
+            subplot_titles=(
+                f"Pie Izquierdo<br><sup>{subtitulo_izq}</sup>",
+                f"Pie Derecho<br><sup>{subtitulo_der}</sup>"
+            ),
+        )
+
+        # Pegar trazas: IZQ con leyenda visible
+        for tr in fig_fases_izq.data:
+            fig.add_trace(tr, row=1, col=1)
+
+        # Pegar trazas: DER sin duplicar leyenda
+        for tr in fig_fases_der.data:
+            tr.showlegend = False
+            fig.add_trace(tr, row=1, col=2)
+
+        # ===== Dominios manuales para abrir un "canal" central de leyenda =====
+        # Izquierda: 0.00 → 0.46 | Canal: 0.46 → 0.54 | Derecha: 0.54 → 1.00
+        fig.update_xaxes(domain=[0.00, 0.46], row=1, col=1)
+        fig.update_xaxes(domain=[0.54, 1.00], row=1, col=2)
+
+        # Ejes + grilla
+        grid = '#d9d9d9'
+        axis = '#bdbdbd'
+        for c in (1, 2):
+            fig.update_xaxes(
+                title="% Ciclo de apoyo",
+                showgrid=True, gridcolor=grid, gridwidth=1,
+                zeroline=False, linecolor=axis, ticks='outside',
+                ticklen=4, tickcolor=axis,
+                range=[0, 100],
+                row=1, col=c
+            )
+            fig.update_yaxes(
+                title="vGRF (% BW)",
+                showgrid=True, gridcolor=grid, gridwidth=1,
+                zeroline=False, linecolor=axis, ticks='outside',
+                ticklen=4, tickcolor=axis,
+                row=1, col=c
+            )
+
+        # Título general + leyenda centrada EN EL CANAL
+        fig.update_layout(
+            title=dict(text="<b>vGRF normalizado — Detección de eventos y subfases</b>"),
+            template="plotly_white",
+            autosize=True, height=None, width=None,
+            margin=dict(t=120, r=40, b=60, l=60),   # ↑ más margen superior para la leyenda
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                x=0.5, xanchor="center",
+                y=1.08, yanchor="bottom",           # ← arriba, fuera del área de datos
+                bgcolor="rgba(255,255,255,0.9)",
+                itemsizing="constant",
+                font=dict(size=12)
+            )
+        )
+
+        return fig
 
 
     def plot_cop_pie_izq_der(copx_izq_list, copy_izq_list, copx_der_list, copy_der_list, pasada_idx=0):
-        print("🧪 Entrando a plot_cop_pie_izq_der()")
-        # Coordenadas de sensores
+
+
+        # --- Coordenadas base de sensores (mm) ---
         coord_df = pd.DataFrame([
             ['S1', 6.4, 182.0],
             ['S2', 0.0, 149.3],
@@ -276,185 +368,362 @@ def generar_figuras_cinetico(data):
             ['S8', 41.3, 14.6]
         ], columns=["Sensor", "X", "Y"]).set_index("Sensor")
 
-        # Preparar coordenadas reflejadas y desplazadas
+        # --- Preparar reflejo/offsets (mm) para separar pies ---
         coord_df_izq = coord_df.copy()
         coord_df_izq["X"] = -coord_df_izq["X"]
         offset_izq = abs(coord_df_izq["X"].min()) + 10
         offset_der = abs(coord_df["X"].min()) + 10
         coord_df_izq["X"] += offset_izq
+
         coord_df_der = coord_df.copy()
         coord_df_der["X"] += offset_der
 
-        # Parámetros comunes
-        margen = 20
+        # --- Parámetros de dibujo ---
+        margen = 20  # mm extra alrededor
         sensor_colores = ['blue', 'yellow', 'grey', 'pink', 'green', 'orange', 'purple', 'red']
 
-        # Crear figura con subplots
-        fig = make_subplots(rows=1, cols=2, subplot_titles=["Pie Izquierdo", "Pie Derecho"])
+        # Diámetro real en mm para los círculos de sensores
+        diam_mm = 14.63
+        r = diam_mm / 2.0
 
-        for col, (coord_df, copx_list, copy_list, pie_nombre) in enumerate([
+        # --- Fig con subplots (Izq / Der) ---
+        fig = make_subplots(rows=1, cols=2, subplot_titles=["Pie Izquierdo", "Pie Derecho"])
+        legend_once = False  # para no duplicar "COP promedio" en leyenda
+
+        for col, (coord_this, copx_list, copy_list, pie_nombre) in enumerate([
             (coord_df_izq, copx_izq_list, copy_izq_list, "Izquierdo"),
-            (coord_df_der, copx_der_list, copy_der_list, "Derecho")
+            (coord_df_der, copx_der_list, copy_der_list, "Derecho"),
         ], start=1):
 
-            x_min = coord_df['X'].min() - margen
-            x_max = coord_df['X'].max() + margen
-            y_min = coord_df['Y'].min() - margen
-            y_max = coord_df['Y'].max() + margen
+            # Rango de ejes por pie
+            x_min = coord_this['X'].min() - margen
+            x_max = coord_this['X'].max() + margen
+            y_min = coord_this['Y'].min() - margen
+            y_max = coord_this['Y'].max() + margen
 
-            # Sensores
-            for i, (sensor, fila) in enumerate(coord_df.iterrows()):
-                fig.add_trace(go.Scatter(
-                    x=[fila["X"]], y=[fila["Y"]],
-                    mode="markers+text",
-                    marker=dict(size=14, color=sensor_colores[i], opacity=0.5),
-                    text=[sensor], textposition="middle center",
-                    showlegend=False
-                ), row=1, col=col)
+            # Ejes anclados 1:1 para que el círculo en mm no se deforme
+            fig.update_yaxes(scaleanchor=('x' if col == 1 else 'x2'), scaleratio=1, row=1, col=col)
 
-            # Trayectorias COP
+            # --- Sensores como círculos en mm (shapes) + etiqueta centrada ---
+            # Elegimos refs correctos por subplot
+            xref = 'x' if col == 1 else 'x2'
+            yref = 'y' if col == 1 else 'y2'
+
+            for i, (sensor, fila) in enumerate(coord_this.iterrows()):
+                cx, cy = float(fila["X"]), float(fila["Y"])
+                col_hex = sensor_colores[i % len(sensor_colores)]
+
+                # Círculo (en datos mm)
+                fig.add_shape(
+                    type="circle",
+                    xref=xref, yref=yref,
+                    x0=cx - r, x1=cx + r,
+                    y0=cy - r, y1=cy + r,
+                    line=dict(color=col_hex, width=1),
+                    fillcolor=col_hex,
+                    opacity=0.5,
+                    layer="below",  # debajo de la trayectoria del COP
+                    row=1, col=col
+                )
+
+                # Etiqueta centrada
+                fig.add_annotation(
+                    x=cx, y=cy, xref=xref, yref=yref,
+                    text=sensor, showarrow=False,
+                    font=dict(size=10, color="black"),
+                    row=1, col=col
+                )
+
+            # --- Trayectorias de COP por ciclo (líneas finas) ---
             for i, (x, y) in enumerate(zip(copx_list, copy_list)):
                 fig.add_trace(go.Scatter(
                     x=x, y=y,
                     mode='lines',
-                    line=dict(dash='dot', width=1, color=f"rgba({(i*50)%255},{(i*70)%255},{(i*90)%255},0.6)"),
-                    name='COP ciclo', showlegend=False
+                    line=dict(dash='dot', width=1,
+                            color=f"rgba({(i*50)%255},{(i*70)%255},{(i*90)%255},0.6)"),
+                    name='COP ciclo',
+                    showlegend=False
                 ), row=1, col=col)
 
-            # COP promedio
-            if copx_list:
+            # --- COP promedio (solo una entrada en la leyenda) ---
+            if len(copx_list) > 0:
                 x_mean = pd.concat(copx_list, axis=1).mean(axis=1)
                 y_mean = pd.concat(copy_list, axis=1).mean(axis=1)
                 fig.add_trace(go.Scatter(
                     x=x_mean, y=y_mean,
                     mode='lines',
                     line=dict(color='black', width=3),
-                    name='COP promedio'
+                    name='COP promedio',
+                    legendgroup='cop-promedio',
+                    showlegend=(col == 1) 
                 ), row=1, col=col)
 
+            # Ejes y rangos
             fig.update_xaxes(range=[x_min, x_max], title="X (mm)", row=1, col=col)
             fig.update_yaxes(range=[y_min, y_max], title="Y (mm)", row=1, col=col)
 
+        # --- Layout general: que se adapte al contenedor (la card manda) ---
         fig.update_layout(
-            title=f"Trayectoria del Centro de Presión - Pasada {pasada_idx + 1}",
-            height=600,
-            width=1200,
+            title=dict( text="<b>Trayectoria del Centro de Presión (COP)</b>"),
+            autosize=True, height=None, width=None,
+            margin=dict(t=170, r=40, b=60, l=60),   # ← techo para título + leyenda
             template="plotly_white",
-            showlegend=True
+            showlegend=True,
+            legend=dict(
+                orientation="h",
+                x=0.5, xanchor="center",
+                y=1.08, yanchor="top",
+                xref="paper", yref="paper",
+                bgcolor="rgba(255,255,255,0.90)",
+                itemsizing="constant",
+                font=dict(size=12)
+            )
         )
 
+
+
+
         return fig
-    
-    coord_sensores = pd.DataFrame([
-    ['S1', 6.4, 152.1],
-    ['S2', 0, 119.4],
-    ['S3', 28.7, 124.1],
-    ['S4', 56.8, 119.6],
-    ['S5', 54.4, 63.7],
-    ['S6', 6.4, -13.9],
-    ['S7', 23.4, -29.8],
-    ['S8', 41.3, -15.3]
-    ], columns=["Sensor", "X", "Y"]).set_index("Sensor")
-    
 
-    def plot_aporte_2D(pasada_df, resultados, coord_sensores, pie="Derecho"):
-        fases = ["loading_response", "midstance", "terminal_stance", "pre_swing"]
-        acumulador = {fase: [] for fase in fases}
 
-        for ciclo in resultados:
-            if not ciclo["is_valid"]:
-                continue
+    def fig_aporte_por_fases(pie, pasada_df, resultados, coord_df=None):
+        """
+        Figura 1x4 con el aporte porcentual por sensor (%) para cada fase del apoyo.
+        - pie: "Izquierdo" o "Derecho"
+        - pasada_df: DataFrame indexado en tiempo con columnas de sensores (Izquierda_S1..S8 o Derecha_S1..S8)
+        - resultados: lista/dict con ciclos válidos (usa start_index, end_index, peaks, valleys o fallback)
+        - coord_df: DataFrame index S1..S8 con X,Y (mm). Si es None, usa coords por defecto.
+        """
+        
 
-            inicio = ciclo["start_index"]
-            fin = ciclo["end_index"]
-            peaks = ciclo["peaks"]
-            valleys = ciclo["valleys"]
+        FASES = [
+            ("loading_response", "<i>loading response</i>"),
+            ("midstance",        "<i>midstance</i>"),
+            ("terminal_stance",  "<i>terminal stance</i>"),
+            ("pre_swing",        "<i>pre-swing</i>"),
+        ]
 
-            if len(peaks) < 2 or len(valleys) < 1:
-                continue
+        if coord_df is None:
+            coord_df = pd.DataFrame([
+                ['S1',  6.4, 182.0],
+                ['S2',  0.0, 149.3],
+                ['S3', 28.7, 154.0],
+                ['S4', 56.8, 149.5],
+                ['S5', 54.4,  93.6],
+                ['S6',  6.4,  16.0],
+                ['S7', 23.4,   0.1],
+                ['S8', 41.3,  14.6],
+            ], columns=["Sensor", "X", "Y"]).set_index("Sensor")
+        coords = coord_df.copy()
 
-            p1, p2 = peaks[0], peaks[1]
-            v = valleys[0]
+        # Reflejo/offset para pie izquierdo o derecho
+        if pie.lower().startswith("iz"):
+            coords["X"] = -coords["X"]
+            coords["X"] += abs(coords["X"].min()) + 10
+        else:
+            coords["X"] += abs(coords["X"].min()) + 10
 
-            segmentos = {
-                'loading_response': (inicio, p1),
-                'midstance': (p1, v),
-                'terminal_stance': (v, p2),
-                'pre_swing': (p2, fin)
-            }
+        def _extraer_details(resultados):
+            # Normaliza a una lista de "details"
+            if isinstance(resultados, dict) and "details" in resultados:
+                return resultados.get("details", [])
+            if isinstance(resultados, list):
+                det = []
+                for it in resultados:
+                    if isinstance(it, dict) and "details" in it:
+                        det.extend(it.get("details", []))
+                return det
+            return []
 
-            for fase in fases:
-                i0, i1 = segmentos[fase]
-                tramo = pasada_df.loc[i0:i1].mean(axis=0)
+        def _aportes_promedio_por_fase(df, resultados):
+            out = {f: pd.Series(0.0, index=df.columns, dtype=float) for f, _ in FASES}
+            cnt = {f: 0 for f, _ in FASES}
 
-                if not isinstance(tramo, pd.Series):
-                    tramo = pd.Series(tramo, index=pasada_df.columns)
+            details = _extraer_details(resultados)
+            usados = 0
 
-                acumulador[fase].append(tramo)
+            if details:
+                for info in details:
+                    if not info.get("is_valid", False):
+                        continue
+                    t_ini = info.get("start_index", None)
+                    t_fin = info.get("end_index", None)
+                    peaks = info.get("peaks", []) or []
+                    valleys = info.get("valleys", []) or []
+                    if t_ini is None or t_fin is None:
+                        continue
 
-        # Calcular promedio por fase
-        promedio_fases = {}
-        for fase, valores in acumulador.items():
-            if not valores:
-                promedio_fases[fase] = pd.Series([0] * 8, index=pasada_df.columns)
-            else:
-                try:
-                    promedio_fases[fase] = pd.concat(valores, axis=1).mean(axis=1)
-                except Exception as e:
-                    print(f"❌ Error al concatenar fase {fase}: {e}")
-                    promedio_fases[fase] = pd.Series([0] * 8, index=pasada_df.columns)
+                    # Eventos: si no hay suficientes, fallback a 30–50–70%
+                    if len(peaks) >= 2 and len(valleys) >= 1:
+                        p1, p2 = float(peaks[0]), float(peaks[1])
+                        v = float(valleys[0])
+                    else:
+                        dur = float(t_fin) - float(t_ini)
+                        if dur <= 0:
+                            continue
+                        p1 = float(t_ini) + 0.30 * dur
+                        v  = float(t_ini) + 0.50 * dur
+                        p2 = float(t_ini) + 0.70 * dur
 
-        # Crear figura Plotly
-        fig = go.Figure()
-        fase_labels = ["LR", "MS", "TS", "PS"]
-        colormap = plt.get_cmap('jet')
+                    segmentos = {
+                        'loading_response': (float(t_ini), p1),
+                        'midstance':        (p1, v),
+                        'terminal_stance':  (v, p2),
+                        'pre_swing':        (p2, float(t_fin))
+                    }
 
-        for i, fase in enumerate(fases):
-            valores = promedio_fases[fase]
-            max_valor = valores.max() if valores.max() != 0 else 1
-            norm_valores = valores / max_valor
+                    for f in segmentos:
+                        a, b = segmentos[f]
+                        seg = df.loc[(df.index >= a) & (df.index <= b)]
+                        if seg.empty:
+                            continue
+                        suma = seg.sum(axis=0)
+                        total = float(suma.sum())
+                        if total <= 0:
+                            continue
+                        out[f] = out[f].add((suma / total) * 100.0, fill_value=0.0)
+                        cnt[f] += 1
+                        usados += 1
 
-            for j, sensor in enumerate(pasada_df.columns):
-                nombre_base = sensor.split("_")[-1]  # extrae S1, S2, ...
-                if nombre_base not in coord_sensores.index:
-                    print(f"⚠️ {nombre_base} no está en coord_sensores. Saltando.")
-                    continue
-                x, y = coord_sensores.loc[nombre_base]
+            if usados == 0 and not df.empty:
+                # fallback: toda la pasada
+                suma = df.sum(axis=0)
+                total = float(suma.sum())
+                base = (suma / total) * 100.0 if total > 0 else pd.Series(0.0, index=df.columns)
+                for f, _ in FASES:
+                    out[f] = base.copy()
+                    cnt[f] = 1
 
-                if pie.lower().startswith("izq"):
-                    x = -x
-                offset = i * 1.2
-                fig.add_trace(go.Scatter(
-                    x=[x + offset], y=[y],
-                    mode="markers+text",
+            # Promedio final y renombrado a S1..S8
+            for f, _ in FASES:
+                if cnt[f] > 0:
+                    out[f] /= cnt[f]
+                out[f].index = [c.split("_")[-1] for c in out[f].index]
+                out[f] = out[f].reindex([f"S{i}" for i in range(1, 9)])
+            return out
+
+        # Tamaño de marcador en función del %
+        def _size_px(p):
+            p = max(0.0, float(p))
+            return 8.0 + 4.0 * np.sqrt(p)
+
+        # Herramientas para el borde “más oscuro” que el relleno
+        def _darker_rgb(rgb_str, factor=0.75):
+            # rgb_str: "rgb(r,g,b)" -> "rgb(r',g',b')"
+            try:
+                nums = rgb_str.strip()[4:-1].split(',')
+                r, g, b = [int(float(v)) for v in nums]
+                r = max(0, min(255, int(r * factor)))
+                g = max(0, min(255, int(g * factor)))
+                b = max(0, min(255, int(b * factor)))
+                return f"rgb({r},{g},{b})"
+            except Exception:
+                return "rgba(0,0,0,0.6)"
+
+        # Rangos del lienzo
+        x_min, x_max = coords["X"].min() - 15, coords["X"].max() + 15
+        y_min, y_max = coords["Y"].min() - 15, coords["Y"].max() + 15
+
+        aportes = _aportes_promedio_por_fase(pasada_df, resultados)
+
+        fig = make_subplots(
+            rows=1, cols=4,
+            subplot_titles=[t for _, t in FASES],
+            horizontal_spacing=0.06
+        )
+
+        # Colorbar compartido (relleno)
+        CMIN, CMAX = 0.0, 40.0
+        fig.update_layout(coloraxis=dict(
+            colorscale="Turbo",
+            cmin=CMIN, cmax=CMAX,
+            colorbar=dict(
+                title="<b>Aporte (%)</b>",
+                orientation="h",
+                thickness=10,
+                x=0.5, xanchor="center",
+                y=-0.12, yanchor="top",
+                len=0.30
+            )
+        ))
+
+        # helper para xref/yref de anotaciones por subplot
+        def _ax_ref(j):
+            return "" if j == 1 else str(j)
+
+        for j, (f, _title_html) in enumerate(FASES, start=1):
+            s = aportes.get(f, pd.Series(0.0, index=[f"S{i}" for i in range(1, 9)]))
+            valores = [float(s.get(f"S{i}", 0.0)) for i in range(1, 9)]
+            sizes = [_size_px(v) for v in valores]
+
+            # Borde por punto: muestreamos la escala Turbo y la oscurecemos
+            # (line.color acepta array por punto)
+            norm = [np.clip((v - CMIN) / (CMAX - CMIN), 0, 1) if np.isfinite(v) else 0 for v in valores]
+            base_cols = [sample_colorscale("Turbo", [t])[0] for t in norm]
+            line_cols = [_darker_rgb(c, 0.70) for c in base_cols]
+
+            # 1) PUNTOS (relleno por coloraxis + borde oscuro por punto)
+            fig.add_trace(
+                go.Scatter(
+                    x=coords.loc[[f"S{i}" for i in range(1, 9)], "X"],
+                    y=coords.loc[[f"S{i}" for i in range(1, 9)], "Y"],
+                    mode="markers",  # sin 'text': lo hacemos con anotaciones para tener caja blanca y borde negro
                     marker=dict(
-                        size=50,
-                        color=norm_valores[j],
-                        colorscale='Jet',
-                        cmin=0, cmax=1,
-                        line=dict(color='black', width=1)
+                        size=sizes, sizemode="diameter",
+                        line=dict(color=line_cols, width=1.5),
+                        color=valores, coloraxis="coloraxis",
+                        opacity=0.95
                     ),
-                    text=[f"{valores[j]:.0f}%"],
-                    textposition="middle center",
+                    hoverinfo="skip",
                     showlegend=False
-                ))
+                ),
+                row=1, col=j
+            )
 
-            fig.add_annotation(
-                x=offset, y=1.1,
-                text=fase_labels[i],
-                showarrow=False,
-                font=dict(size=14, color="black")
+            # 2) NÚMEROS como anotaciones: fondo BLANCO + borde NEGRO
+            xref = f"x{_ax_ref(j)}"
+            yref = f"y{_ax_ref(j)}"
+            xs = coords.loc[[f"S{i}" for i in range(1, 9)], "X"].values
+            ys = coords.loc[[f"S{i}" for i in range(1, 9)], "Y"].values
+            for (xk, yk, vk) in zip(xs, ys, valores):
+                fig.add_annotation(
+                    x=xk, y=yk,
+                    xref=xref, yref=yref,
+                    text=f"<b>{vk:.1f}%<b>",
+                    showarrow=False,
+                    xanchor="center", yanchor="middle",
+                    font=dict(size=11, color="black")
+                )
+
+            # ✔ Grid ON, ejes y ticks OFF
+            fig.update_xaxes(
+                range=[x_min, x_max],
+                showgrid=True, gridcolor="rgba(0,0,0,0.1)",
+                showticklabels=False, ticks='',
+                showline=False, zeroline=False, mirror=False,
+                title_text=None,
+                row=1, col=j
+            )
+            fig.update_yaxes(
+                range=[y_min, y_max],
+                showgrid=True, gridcolor="rgba(0,0,0,0.1)",
+                showticklabels=False, ticks='',
+                showline=False, zeroline=False, mirror=False,
+                title_text=None,
+                row=1, col=j
             )
 
         fig.update_layout(
-            title=f"Aporte porcentual por sensor – Pie {pie}",
-            xaxis=dict(visible=False),
-            yaxis=dict(visible=False),
-            margin=dict(l=20, r=20, t=40, b=20),
-            height=400
+            title=dict(text=f"<b>Aporte porcentual por sensor – Pie {pie}</b>", pad=dict(t=0, b=24)),
+            template="plotly_white",
+            margin=dict(t=80, l=20, r=20, b=120),
+            autosize=True, height=None, width=None,
+            showlegend=False
         )
-
         return fig
+
+
+    
 
     # === Desempaquetar datos relevantes con protección de estructura ===
     filt_izq = data['filt_izq'][0] if isinstance(data['filt_izq'], list) else data['filt_izq']
@@ -471,6 +740,15 @@ def generar_figuras_cinetico(data):
     sum_der = data['sum_der']
     min_indices_izq = data['min_indices_izq']
     min_indices_der = data['min_indices_der']
+    
+    idx_min_der = (min_indices_der[0]
+               if isinstance(min_indices_der, list) and len(min_indices_der) and isinstance(min_indices_der[0], list)
+               else min_indices_der)
+    idx_min_izq = (min_indices_izq[0]
+               if isinstance(min_indices_izq, list) and len(min_indices_izq) and isinstance(min_indices_izq[0], list)
+               else min_indices_izq)
+    
+
 
 
     # 1. Gráfico de ciclos válidos/inválidos
@@ -479,15 +757,16 @@ def generar_figuras_cinetico(data):
         sum_der,
         results_izq,
         results_der,
-        min_indices_izq,
-        min_indices_der
+        idx_min_izq,   # ya reempaquetados
+        idx_min_der,   # ya reempaquetados
     ) if (has_valid_der or has_valid_izq) else go.Figure()
+
 
     # 2. Gráficos por fases (izquierdo y derecho)
     fig_fases_izq = plot_vgrf_por_fases(
         [filt_izq],
         [results_izq],
-        [indices_apoyo_izq],
+        [indices_apoyo_izq[0]],
         peso_kg=BW,
         lado="I"
     )[0] if has_valid_izq else go.Figure()
@@ -495,14 +774,14 @@ def generar_figuras_cinetico(data):
     fig_fases_der = plot_vgrf_por_fases(
         [filt_der],
         [results_der],
-        [indices_apoyo_der],
+        [indices_apoyo_der[0]],
         peso_kg=BW,
         lado="R"
     )[0] if has_valid_der else go.Figure()
     
 
-    print("🧪 fig_ciclos tiene", len(fig_ciclos.data), "trazas")
-    print("🧪 fig_fases_der tiene", len(fig_fases_der.data), "trazas")
+    fig_fases = combinar_fases_en_uno(fig_fases_izq, fig_fases_der)
+
 
     # 3. Gráfico de COP (Centro de Presión)
     fig_cop = plot_cop_pie_izq_der(
@@ -514,24 +793,17 @@ def generar_figuras_cinetico(data):
     ) if (has_valid_der or has_valid_izq) else go.Figure()
 
     # 4. Gráficos de aporte por fase (izquierdo y derecho)
-    fig_aporte_izq = plot_aporte_2D(
-        filt_izq,
-        results_izq['details'],
-        coord_sensores,
-        pie="Izquierdo"
-    ) if has_valid_izq else go.Figure()
+    fig_aporte_izq = fig_aporte_por_fases("Izquierdo", data["filt_izq"], data["resultados_izq"]) if has_valid_izq else go.Figure()
+    fig_aporte_der = fig_aporte_por_fases("Derecho",   data["filt_der"], data["resultados_der"]) if has_valid_der else go.Figure()
 
-    fig_aporte_der = plot_aporte_2D(
-        filt_der,
-        results_der['details'],
-        coord_sensores,
-        pie="Derecho"
-    ) if has_valid_der else go.Figure()
+    fig_cop.update_layout(margin=dict(t=60, r=30, b=80, l=60))
+    fig_aporte_izq.update_layout(margin=dict(t=50, r=30, b=40, l=60))
+    fig_aporte_der.update_layout(margin=dict(t=50, r=30, b=40, l=60))
+
 
     return (
         fig_ciclos,
-        fig_fases_izq,  
-        fig_fases_der,
+        fig_fases,
         fig_cop,           
         fig_aporte_izq,
         fig_aporte_der

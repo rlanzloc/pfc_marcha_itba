@@ -8,9 +8,6 @@ app = dash.Dash(__name__, use_pages=True,
                external_stylesheets=[dbc.themes.SPACELAB],
                suppress_callback_exceptions=True)
 
-
-
-
 # Configuración para Bootstrap Icons
 app.index_string = '''
 <!DOCTYPE html>
@@ -34,6 +31,7 @@ app.index_string = '''
 '''
 
 
+
 sidebar = dbc.Nav(
     [
         html.Div(
@@ -42,12 +40,12 @@ sidebar = dbc.Nav(
                 html.Div(
                     "Menú",
                     style={
-                        "fontSize": "28px",
+                        "fontSize": "24px",
                         "fontWeight": "bold",
                         "color": "white",
                         "padding": "20px",
                         "textAlign": "center",
-                        "backgroundColor": "#2c3e50"  # Eliminado borderBottom
+                        "backgroundColor": "#2c3e50"
                     }
                 ),
                 
@@ -81,24 +79,24 @@ sidebar = dbc.Nav(
             ]
         ),
         
-        # Botón de toggle mejorado con mejor visibilidad
+        # Botón de toggle
         html.Div(
             dbc.Button(
                 html.I(className="bi bi-chevron-left"),
                 id="sidebar-toggle",
                 className="btn-sm",
                 style={
-                    "position": "absolute",
-                    "right": "-15px",
+                    "position": "fixed",
+                    "left": "calc(250px - 12px)",
                     "top": "20px",
                     "zIndex": "1100",
-                    "width": "30px",
-                    "height": "30px",
+                    "width": "28px",
+                    "height": "28px",
                     "borderRadius": "50%",
                     "backgroundColor": "#2c3e50",
                     "color": "white",
-                    "border": "1px solid rgba(255,255,255,0.3)",  # Borde más visible
-                    "boxShadow": "0 2px 8px rgba(0,0,0,0.3)",  # Sombra más pronunciada
+                    "border": "1px solid rgba(255,255,255,0.3)",
+                    "boxShadow": "0 2px 8px rgba(0,0,0,0.3)",
                     "display": "flex",
                     "alignItems": "center",
                     "justifyContent": "center",
@@ -109,21 +107,38 @@ sidebar = dbc.Nav(
         )
     ],
     vertical=True,
+    id="sidebar",
+    className="",
     style={
-        "height": "100vh",
-        "width": "250px",
-        "position": "fixed",
-        "zIndex": "1000",
-        "boxShadow": "2px 0 10px rgba(0, 0, 0, 0.1)",
         "padding": "0",
         "borderRight": "1px solid rgba(255,255,255,0.1)",
-        "backgroundColor": "#2c3e50"
+        "backgroundColor": "#2c3e50",
+        "width": "250px",             # ancho fijo del sidebar
+        "position": "fixed",
+        "top": "0",
+        "left": "0",
+        "height": "100vh",
+        "zIndex": "1000",
+        "boxShadow": "2px 0 10px rgba(0, 0, 0, 0.1)",
+        "transition": "width 0.3s ease", 
+        "overflow": "hidden",
     }
 )
+
+
 
 # Layout principal
 app.layout = dbc.Container(
     [
+        # Stores
+        dcc.Store(id="__force_resize_token"),  # NEW: para forzar relayout Plotly
+        dcc.Store(id='store-figs-cinetico', storage_type='session'),
+        dcc.Store(id='store-figs-cinetico-2', storage_type='session'),
+        dcc.Store(id='store-figs-cinematico', storage_type='session'),
+        dcc.Store(id='store-patient-info', storage_type='session'),
+
+        
+
         # Contenedor del sidebar
         html.Div(
             sidebar,
@@ -137,12 +152,16 @@ app.layout = dbc.Container(
         # Contenedor del contenido principal
         html.Div(
             [
-                dash.page_container
+                # NEW: envolvemos el page_container para ancho max + bordes blancos
+                html.Div(
+                    dash.page_container,
+                    className="container-max"  # ← definido en assets/00_layout.css
+                )
             ],
             id="content-container",
             style={
                 "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)",
-                "marginLeft": "250px",
+                "marginLeft": "250px",      # el callback alterna 250px ↔ 0
                 "padding": "30px",
                 "minHeight": "100vh",
                 "backgroundColor": "#f8f9fa"
@@ -152,6 +171,63 @@ app.layout = dbc.Container(
     fluid=True,
     style={"padding": "0", "overflowX": "hidden"}
 )
+
+app.validation_layout = html.Div([
+    # 1) Tu layout real (toda la app montada)
+    app.layout,
+
+    # 2) Stores globales que usan callbacks en distintas páginas
+    dcc.Store(id="__force_resize_token"),
+    dcc.Store(id='store-figs-cinetico', storage_type='session'),
+    dcc.Store(id='store-figs-cinetico-2', storage_type='session'),
+    dcc.Store(id='store-figs-cinematico', storage_type='session'),
+    dcc.Store(id='store-patient-info', storage_type='session'),
+
+    # ⚠️ Importante para la página cinética (pg4.py)
+    dcc.Store(id='session-stored-cinetico', storage_type='session'),
+
+    # 3) Skeleton de componentes que aparecen en callbacks de la PÁGINA CINÉTICA (pg4.py)
+    #    (aunque no estés en /pg4, esto evita el error de "A nonexistent object was used...")
+    dcc.Tabs(id='tabs', value='tab-csv'),
+    html.Div(id='tabs-content'),
+    dcc.Upload(id='upload-csv'),
+    html.Div(id='csv-validation'),
+    dcc.Graph(id='fig-ciclos'),
+    dcc.Graph(id='fig-fases'),
+    dcc.Graph(id='fig-cop'),
+    dcc.Graph(id='fig-aporte-izq'),
+    dcc.Graph(id='fig-aporte-der'),
+
+    # Controles/estados serie (aparecen en callbacks de pg4.py)
+    html.Span(id='port-status-label'),
+    html.Span(id='port-status-dynamic'),
+    html.Div(id='reading-status'),
+    html.Button(id='start-button'),
+    html.Button(id='stop-button'),
+    html.Button(id='refresh-button'),
+
+    # Datos de paciente usados en pg4.py
+    dcc.Store(id='patient-info'),
+    dcc.Input(id='input-nombre'),
+    dcc.Input(id='input-edad'),
+    dcc.Input(id='input-peso'),
+    html.Button(id='btn-save-patient'),
+    html.Div(id='patient-saved-msg'),
+
+    # 4) Skeleton de la PÁGINA CINEMÁTICA (analysis)
+    dcc.Upload(id='upload-c3d'),
+    html.Div(id='output-c3d-upload'),
+    html.Div(id='graphs-container'),
+    html.Div(id='parametros-container'),
+    dcc.Store(id='stored-data'),
+    dcc.Store(id='session-stored-data', storage_type='session'),
+
+    # 5) Skeleton de la PÁGINA DE REPORTE (si la usás)
+    html.Button(id='btn-gen-report'),
+    dcc.Download(id='dl-report'),
+    html.Div(id='report-status'),
+])
+
 
 # CSS personalizado mejorado
 app.clientside_css = [{
@@ -171,63 +247,100 @@ app.clientside_css = [{
     '''
 }]
 
-# Callback mejorado para el sidebar
+# Callback para el sidebar (abre/cierra)
 @app.callback(
-    [Output("sidebar-container", "style"),
-     Output("content-container", "style"),
-     Output("sidebar-toggle", "children"),
-     Output("sidebar-toggle", "style")],
-    [Input("sidebar-toggle", "n_clicks")],
-    [State("sidebar-container", "style"),
-     State("content-container", "style"),
-     State("sidebar-toggle", "style")]
+    [
+        Output("sidebar", "style"),            # cambiamos el ancho real del sidebar
+        Output("content-container", "style"),  # y el margen del contenido
+        Output("sidebar-toggle", "children"),
+        Output("sidebar-toggle", "style"),     # ← movemos el botón aquí
+    ],
+    Input("sidebar-toggle", "n_clicks"),
+    State("sidebar", "style"),
+    State("content-container", "style"),
+    State("sidebar-toggle", "style"),
 )
 def toggle_sidebar(n, sidebar_style, content_style, btn_style):
-    if n is None:
-        n = 0
-    
-    if n % 2 == 1:  # Sidebar cerrado
-        sidebar_style.update({
-            "marginLeft": "-250px",
-            "boxShadow": "none"
-        })
-        content_style.update({
-            "marginLeft": "0",
-            "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
-        })
+    sidebar_style = dict(sidebar_style or {})
+    content_style = dict(content_style or {})
+    btn_style     = dict(btn_style or {})
+
+    OPEN_W   = "250px"
+    CLOSED_W = "15px"
+    OVERLAP  = 10  # px que el botón sobresale del borde
+
+    n = n or 0
+    if n % 2 == 1:
+        # CERRADO
+        sidebar_style.update({"width": CLOSED_W})
+        content_style.update({"marginLeft": CLOSED_W})
         icon = html.I(className="bi bi-chevron-right")
-        # Flecha más visible con fondo blanco y color azul oscuro
-        # En el callback, dentro del if n % 2 == 1 (sidebar cerrado), cambia:
         btn_style.update({
-            "color": "white",  # Cambia de "#2c3e50" a "white"
-            "backgroundColor": "#2c3e50",  # Fondo oscuro para contraste
+            "position": "fixed",
+            "left": f"calc({CLOSED_W} - {OVERLAP}px)",  # ← mueve el botón
+            "top": "20px",
+            "zIndex": "1100",
+            "backgroundColor": "#2c3e50",
+            "color": "white",
             "border": "1px solid rgba(255,255,255,0.3)",
-            "boxShadow": "0 2px 8px rgba(0,0,0,0.3)"
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.25)"
         })
-    else:  # Sidebar abierto
-        sidebar_style.update({
-            "marginLeft": "0",
-            "boxShadow": "2px 0 10px rgba(0, 0, 0, 0.1)"
-        })
-        content_style.update({
-            "marginLeft": "250px",
-            "transition": "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)"
-        })
+    else:
+        # ABIERTO
+        sidebar_style.update({"width": OPEN_W})
+        content_style.update({"marginLeft": OPEN_W})
         icon = html.I(className="bi bi-chevron-left")
         btn_style.update({
-            "color": "white",
+            "position": "fixed",
+            "left": f"calc({OPEN_W} - {OVERLAP}px)",
+            "top": "20px",
+            "zIndex": "1100",
             "backgroundColor": "#2c3e50",
-            "border": "1px solid rgba(255,255,255,0.3)"
+            "color": "white",
+            "border": "1px solid rgba(255,255,255,0.3)",
+            "boxShadow": "0 4px 12px rgba(0,0,0,0.25)"
         })
-    
+
+    # asegurar props clave del sidebar por si se pierden
+    sidebar_style.setdefault("position", "fixed")
+    sidebar_style.setdefault("left", "0")
+    sidebar_style.setdefault("top", "0")
+    sidebar_style.setdefault("height", "100vh")
+    sidebar_style.setdefault("zIndex", "1000")
+    sidebar_style.setdefault("overflow", "hidden")
+    sidebar_style.setdefault("transition", "width 0.3s ease")
+    sidebar_style.setdefault("backgroundColor", "#2c3e50")
+    sidebar_style.setdefault("boxShadow", "2px 0 10px rgba(0, 0, 0, 0.1)")
+    sidebar_style.setdefault("borderRight", "1px solid rgba(255,255,255,0.1)")
+
+    content_style.setdefault("transition", "all 0.3s cubic-bezier(0.4, 0, 0.2, 1)")
+    content_style.setdefault("padding", "30px")
+    content_style.setdefault("minHeight", "100vh")
+    content_style.setdefault("backgroundColor", "#f8f9fa")
+
     return sidebar_style, content_style, icon, btn_style
 
+
+
+
+# NEW: Client-side callback para forzar relayout de Plotly al togglear
+app.clientside_callback(
+    """
+    function(n_clicks, token) {
+        // Espera breve para que se apliquen los estilos de marginLeft
+        setTimeout(function() {
+            window.dispatchEvent(new Event('resize'));
+        }, 150);
+        return (token || 0) + 1;
+    }
+    """,
+    Output("__force_resize_token", "data"),
+    Input("sidebar-toggle", "n_clicks"),
+    State("__force_resize_token", "data"),
+    prevent_initial_call=True
+)
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # Usa el puerto que Render asigna
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="127.0.0.1", port=port, debug=True, use_reloader=False)
-
-
-#if __name__ == "__main__":
-#    port = int(os.environ.get("PORT", 5000))  # Usa el puerto que Render asigna
-#    app.run(host="0.0.0.0", port=port, debug=True)
 

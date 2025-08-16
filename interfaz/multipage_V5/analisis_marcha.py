@@ -270,11 +270,11 @@ def procesar_archivo_c3d( filename ):
                 excluded_cycles_right, excluded_cycles_left)
 
     def procesar_articulacion(articulacion, nombre, ylim, min_indices):
-        euler_angles = ktk.geometry.get_angles(articulacion, "ZYX", degrees=True)
+        euler_angles = ktk.geometry.get_angles(articulacion, "ZXY", degrees=True)
         angles = ktk.TimeSeries(time=markers.time)
         angles.data["Z"] = euler_angles[:, 0]
-        angles.data["Y"] = euler_angles[:, 1]
-        angles.data["X"] = euler_angles[:, 2]
+        angles.data["X"] = euler_angles[:, 1]
+        angles.data["Y"] = euler_angles[:, 2]
 
         # Define parámetros del filtro
         sampling_rate = 100  # Frecuencia de muestreo en Hz (ajusta según tus datos)

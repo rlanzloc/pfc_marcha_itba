@@ -1,0 +1,60 @@
+/* Contenido principal centrado, con ancho máximo y borde blanco chico */
+.container-max {
+  max-width: 1320px;         /* Ajustá 1100–1400 a gusto */
+  margin: 0 auto;
+  padding: 0 12px;           /* bordes laterales sutiles */
+  box-sizing: border-box;
+}
+
+/* Grilla y tarjetas para que todos los gráficos tengan la misma “caja” */
+.graph-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  grid-column-gap: 16px;
+  grid-row-gap: 16px;
+}
+
+.graph-card {
+  grid-column: span 6;       /* mitad de fila (6/12) */
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,.04);
+}
+
+/* Tarjeta full-width (ciclos, COP, etc.) */
+.graph-card.full {
+  grid-column: 1 / -1;
+}
+
+/* Asegurar que Plotly use el 100% de la tarjeta */
+.graph-card .dash-graph,
+.graph-card .js-plotly-plot {
+  width: 100% !important;
+}
+
+/* En pantallas chicas, una sola columna */
+@media (max-width: 992px) {
+  .graph-card { grid-column: 1 / -1; }
+}
+
+
+/* La tarjeta contiene al gráfico y recorta cualquier desborde */
+.graph-card {
+  overflow: hidden;        /* ← evita que el SVG “se salga” por abajo/los costados */
+  position: relative;
+}
+
+/* Asegura que el contenedor del gráfico ocupe el ancho/alto de la tarjeta */
+.graph-card .dash-graph,
+.graph-card .js-plotly-plot {
+  width: 100% !important;
+  display: block;
+}
+
+/* (Opcional) alturas mínimas para tarjetas “full” como COP */
+.graph-card.full.cop-card { height: clamp(560px, 70vh, 820px); }   /* padding incluido */
+
+
+

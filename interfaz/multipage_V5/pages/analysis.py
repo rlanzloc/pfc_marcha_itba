@@ -9,6 +9,7 @@ from analisis_marcha import procesar_archivo_c3d  # Importa la función de anál
 import tempfile
 import os
 import numpy as np
+from dash import no_update
 
 
 dash.register_page(__name__, path="/analysis", name="Análisis Cinemático", icon="file-earmark-text")
@@ -28,7 +29,7 @@ layout = dbc.Container([
         dbc.Col(html.H1("Análisis Cinemático", className="text-center mb-4", style={
             'color': '#2c3e50',
             'fontWeight': '600',
-            'marginTop': '10px'
+            'marginTop': '5px'
         }))
     ]),
     dbc.Row([
@@ -47,7 +48,7 @@ layout = dbc.Container([
                     'borderStyle': 'dashed',
                     'borderRadius': '5px',
                     'textAlign': 'center',
-                    'margin': '10px 0',
+                    'margin': '0 0 3px 0',
                     'cursor': 'pointer',
                     'backgroundColor': 'rgba(66, 139, 202, 0.1)',
                     'borderColor': '#428bca',
@@ -61,10 +62,10 @@ layout = dbc.Container([
                 'fontWeight': '500'
             }),
         ], width=12)
-    ], className="mb-4"),
+    ], className="mb-1"),
     # Contenedor para las tabs mejorado
     html.Div(id='tabs-container', style={'display': 'none'})
-], fluid=True, style={'padding': '20px'})
+], fluid=True, style={'padding': '10px'})
 
 # Callback para mostrar/ocultar las tabs según si hay datos
 @callback(
@@ -117,21 +118,14 @@ def show_hide_tabs(stored_data):
                                 value='Ambos',
                                 inline=True,
                                 inputStyle={'margin-right': '5px'},
-                                labelStyle={
-                                    'display': 'inline-block',
-                                    'margin-right': '15px',
-                                    'cursor': 'pointer'
-                                },
-                                style={
-                                    'fontSize': '16px',
-                                    'padding': '10px 0'
-                                }
+                                labelStyle={'display': 'inline-block','margin-right': '15px','cursor': 'pointer'},
+                                style={'fontSize': '16px', 'padding': '0'}   
                             ),
-                            style={'margin-bottom': '20px'}
+                            style={'marginBottom': '2px'}                   
                         )
                     ], width=12)
-                ], className="mb-4"),
-                dbc.Row(id='graphs-container')
+                ], style={'marginBottom': '1px'}),                           
+                dbc.Row(id='graphs-container', style={'marginTop': '0'})     
             ]
         ),
         dcc.Tab(
@@ -165,7 +159,7 @@ def show_hide_tabs(stored_data):
         )
     ], style={
         'borderBottom': '1px solid #d6d6d6',
-        'marginBottom': '20px'
+        'marginBottom': '10px'
     })
     
     return tabs, {'display': 'block'}
@@ -191,7 +185,7 @@ def update_parametros_espaciotemporales(stored_data):
         color_apoyo_derecho = '#FF9999'
         color_balanceo_derecho = '#FF5252'
         color_apoyo_izquierdo = '#9999FF'
-        color_balanceo_izquierdo = '#4285F4'
+        color_balanceo_izquierdo = "#0000FF"
 
         if tipo == "porcentaje":
             # valores = [apoyo_derecho %, apoyo_izquierdo %]
@@ -305,7 +299,7 @@ def update_parametros_espaciotemporales(stored_data):
         if len(valores) == 2:
             if apilado:
                 # Definir colores apilados basados en el título
-                colores_apilados = ['#FF5252', '#FF9999'] if 'balanceo' in titulo.lower() else ['#4285F4', '#9999FF']
+                colores_apilados = ['#FF5252', '#FF9999'] if 'balanceo' in titulo.lower() else ['#0000FF', '#9999FF']
                 
                 # Gráfico apilado (para balanceo/apoyo)
                 fig.add_trace(go.Bar(
@@ -420,7 +414,7 @@ def update_parametros_espaciotemporales(stored_data):
         return graph
     
     # Colores consistentes
-    colores_lados = ['#FF5252', '#4285F4']  # Rojo y azul
+    colores_lados = ['#FF5252', '#0000FF']  # Rojo y azul
     
     # Rangos máximos
     max_duracion = max(
@@ -460,12 +454,12 @@ def update_parametros_espaciotemporales(stored_data):
         dbc.Col(html.Div([
             html.H5("Ciclos Izquierda", style={
                 'textAlign': 'center',
-                'color': '#4285F4',
+                'color': '#0000FF',
                 'marginBottom': '10px'
             }),
             html.H2(f"{parametros['num_ciclos_izquierdo']}", style={
                 'textAlign': 'center',
-                'color': '#4285F4',
+                'color': '#0000FF',
                 'fontSize': '42px',
                 'fontWeight': '600'
             })
@@ -596,15 +590,7 @@ def update_parametros_espaciotemporales(stored_data):
     ])
     
 
-    return html.Div([
-        html.H3("Parámetros Espaciotemporales", style={
-            'textAlign': 'center',
-            'color': '#2c3e50',
-            'margin': '20px 0 30px 0',
-            'fontFamily': 'Arial',
-            'fontWeight': '600'
-        }),
-        
+    return html.Div([        
         fila1,
         fila2,
         fila3,
@@ -617,23 +603,23 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
     # Colores y etiquetas
     colors = {
         'Derecha': '#FF5252',  # Rojo
-        'Izquierda': '#4285F4',  # Azul
+        'Izquierda': '#0000FF',  # Azul
     }
     
     labels = {
-        'Derecha': 'Derecho',
-        'Izquierda': 'Izquierdo'
+        'Derecha': 'Derecha',
+        'Izquierda': 'Izquierda'
     }
 
     light_colors = {
         '#FF5252': 'rgba(255, 82, 82, 0.2)',
-        '#4285F4': 'rgba(66, 133, 244, 0.2)'
+        '#0000FF': 'rgba(0, 0, 255, 0.2)',
     }
 
     # Diccionario de títulos personalizados
     SUBTITULOS_EJES = {
         "pelvis / pie": ["<b>Oblicuidad Pélvica</b>", "<b>Rotación Pélvica</b>", "<b>Progresión del Pie</b>"],
-        "default": ["<b>Ángulos de Z</b>", "<b>Ángulos de Y</b>", "<b>Ángulos de X</b>"]
+        "default": ["<b>Flexión/Extensión (Z)</b>", "<b>Ángulos de Y</b>", "<b>Ángulos de X</b>"]
     }
 
     # Obtener títulos según la articulacións
@@ -719,7 +705,7 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
                 mode='lines',
                 line=dict(width=0),
                 fillcolor=light_colors[color],
-                name=f"{label}: Desviación",
+                name=f"{label}: Desvío",
                 legendgroup=label,
                 showlegend=show_legend,
             ), row=row, col=col)
@@ -731,22 +717,24 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
 
     fig.update_layout(
         title_text=f"<b>Articulación de {articulacion.capitalize()}</b> - Ángulos por eje",
+        autosize=True,
         height=400,
-        width=1200,
+        width=None,
         plot_bgcolor='rgba(0,0,0,0)',
         paper_bgcolor='rgba(0,0,0,0)',
         font=dict(family="Arial", size=12),
+        showlegend=True, 
         legend=dict(
-            orientation="v",
+            orientation="h",
             yanchor="bottom",
-            y=1.15,  # Posición vertical ajustada
+            y=1.10,  
             xanchor="center",
             x=0.5,
-            bgcolor='rgba(255,255,255,0.7)',
+            bgcolor="rgba(248,249,250,0.95)", 
             itemsizing='constant',
             traceorder='normal'  # Orden normal de las leyendas
         ),
-        margin=dict(l=40, r=40, t=100, b=40)
+        margin=dict(l=40, r=40, t=130, b=40) 
     )
 
     # Configuración de ejes
@@ -818,7 +806,7 @@ def update_output(contents, filename):
                 color="success",
                 dismissable=True,
                 style={
-                    'margin': '10px 0',
+                    'margin': '4px 0',
                     'borderLeft': '4px solid #28a745'
                 }
             )
@@ -849,7 +837,7 @@ def update_output(contents, filename):
 )
 def update_graphs(lado, stored_data):
     if stored_data is None:
-        return []
+        return [], no_update
     
     # Mapear los valores de los radio buttons a los nombres usados en los datos
     lado_map = {
@@ -858,6 +846,7 @@ def update_graphs(lado, stored_data):
         'Ambos': 'Ambos'
     }
     lado_seleccionado = lado_map.get(lado, 'Ambos')
+    
 
     # Convertir los datos a DataFrames
     def crear_df(lado):
@@ -905,7 +894,7 @@ def update_graphs(lado, stored_data):
             articulacion=articulacion
         )
         
-        graphs.append(dbc.Col(dcc.Graph(figure=fig), width=12))
+        graphs.append(dbc.Col(dcc.Graph(figure=fig, config={'responsive': True}, style={'width': '100%', 'height': '420px'}), width=12, style={'minWidth': 0}))
 
     # Pelvis / Pie
 
@@ -929,8 +918,68 @@ def update_graphs(lado, stored_data):
         articulacion="Pelvis / Pie"
     )
 
-    graphs.append(dbc.Col(dcc.Graph(figure=fig_pelvis), width=12))
+    graphs.append(dbc.Col(dcc.Graph(figure=fig_pelvis, config={'responsive': True}, style={'width': '100%', 'height': '420px'}), width=12, style={'minWidth': 0}))
   
 
 
     return graphs if graphs else dbc.Alert("No hay datos disponibles para la selección actual", color="warning")
+
+
+import json
+
+@callback(
+    Output('store-figs-cinematico', 'data'),
+    Input('graphs-container', 'children'),
+    prevent_initial_call=True
+)
+def harvest_figs_for_report(children):
+    """
+    Recorre el árbol de niños de `graphs-container`, encuentra dcc.Graph,
+    y guarda sus figuras (JSON) + título en store-figs-cinematico.
+    No modifica tu callback original ni recalcula nada.
+    """
+    if not children:
+        return no_update
+
+    figs = []
+
+    def _walk(node):
+        # node puede ser dict (component), list de children, o primitivos
+        if node is None:
+            return
+        if isinstance(node, list):
+            for it in node:
+                _walk(it)
+            return
+        if isinstance(node, dict):
+            props = node.get("props", {})
+            comp_type = node.get("type", "")
+            # Si es un dcc.Graph: suele tener 'figure' en props
+            if comp_type == "Graph" and "figure" in props:
+                figs.append(props["figure"])
+            # Seguir bajando si hay children
+            if "children" in props:
+                _walk(props["children"])
+            return
+        # otros tipos (str/num) no interesan
+
+    _walk(children)
+
+    if not figs:
+        return no_update
+
+    payload = {}
+    for i, fig in enumerate(figs, 1):
+        # `fig` ya es un dict Plotly; sacamos el título si existe
+        title = ""
+        layout_title = fig.get("layout", {}).get("title", None)
+        if isinstance(layout_title, dict):
+            title = (layout_title.get("text") or "").strip()
+        elif isinstance(layout_title, str):
+            title = layout_title.strip()
+
+        name = title or f"Figura {i}"
+        # Guardamos como string JSON para poder reconstruir con pio.from_json en report.py
+        payload[name] = {"title": name, "json": json.dumps(fig)}
+
+    return payload
