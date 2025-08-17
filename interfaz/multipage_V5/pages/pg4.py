@@ -617,6 +617,9 @@ def handle_csv_upload(contents, filename, stored_data):
     Input('patient-info', 'data'),
     State('session-stored-cinetico', 'data')
 )
+
+
+
 def actualizar_graficos_cineticos(trigger, tab_value, patient_data, stored_data):
 
     style_hide = {'display': 'none'}
