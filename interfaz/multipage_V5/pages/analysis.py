@@ -9,7 +9,9 @@ from analisis_marcha import procesar_archivo_c3d  # Importa la función de anál
 import tempfile
 import os
 import numpy as np
+from dash.exceptions import PreventUpdate
 from dash import no_update
+import json
 
 
 dash.register_page(__name__, path="/analysis", name="Análisis Cinemático", icon="file-earmark-text")
@@ -22,15 +24,35 @@ RANGOS_Y = {
     "cadera": {"Z": (-20, 60), "Y": (-30, 30), "X": (-30, 30)},
 }
 
+header_paciente_cine = html.Div([
+    dbc.InputGroup([
+        dbc.Input(id="input-nombre-cine", placeholder="Nombre", type="text",
+                  size="sm", style={"flex": "0 0 100px"}),
+        dbc.Input(id="input-edad-cine", placeholder="Edad", type="number", min=0, step=1,
+                  size="sm", style={"flex": "0 0 70px", "textAlign":"center"}),
+        dbc.Input(id="input-peso-cine", placeholder="Peso", type="number", min=0, step=0.1,
+                  size="sm", style={"flex": "0 0 70px", "textAlign":"center"}),
+        dbc.Button("Guardar", id="btn-save-patient-cine", size="sm", color="primary",
+                   style={"flex":"0 0 auto"})
+    ], size="sm", className="me-2"),
+    html.Small(id="patient-saved-msg-cine", children="", style={"color":"#6c757d","marginTop":"4px","display":"block"}),
+], style={"display":"flex","flexDirection":"column","gap":"4px","marginBottom":"6px"})
+
+
+
 layout = dbc.Container([
     dcc.Store(id='stored-data'),
     dcc.Store(id='session-stored-data', storage_type='session'), 
+    dcc.Store(id='store-figs-esp-temp', storage_type='session'),
     dbc.Row([
+        header_paciente_cine,
+        
         dbc.Col(html.H1("Análisis Cinemático", className="text-center mb-4", style={
             'color': '#2c3e50',
             'fontWeight': '600',
             'marginTop': '5px'
-        }))
+        })),
+        
     ]),
     dbc.Row([
         dbc.Col([
@@ -66,6 +88,43 @@ layout = dbc.Container([
     # Contenedor para las tabs mejorado
     html.Div(id='tabs-container', style={'display': 'none'})
 ], fluid=True, style={'padding': '10px'})
+
+
+
+
+@callback(
+    Output('store-patient-info', 'data', allow_duplicate=True),
+    Output('patient-saved-msg-cine', 'children'),
+    Input('btn-save-patient-cine', 'n_clicks'),
+    State('input-nombre-cine', 'value'),
+    State('input-edad-cine', 'value'),
+    State('input-peso-cine', 'value'),
+    State('store-patient-info', 'data'),
+    prevent_initial_call=True
+)
+def save_patient_cine(n, nombre, edad, peso, current):
+    if not n:
+        return no_update, no_update
+    data = dict(current or {})
+    data.update({
+        "nombre": (nombre or "").strip(),
+        "edad":   int(edad) if edad not in (None, "") else None,
+        "peso":   float(peso) if peso not in (None, "") else None,
+    })
+    return data, "✅ Datos del usuario guardados"
+
+@callback(
+    Output('input-nombre-cine', 'value'),
+    Output('input-edad-cine', 'value'),
+    Output('input-peso-cine', 'value'),
+    Input('store-patient-info', 'data')
+)
+def load_patient_cine(data):
+    if not data:
+        return "", None, None
+    return data.get("nombre",""), data.get("edad", None), data.get("peso", None)
+
+
 
 # Callback para mostrar/ocultar las tabs según si hay datos
 @callback(
@@ -755,6 +814,52 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
     return fig
 
 
+@callback(
+    Output('store-figs-esp-temp', 'data'),
+    Input('parametros-container', 'children'),
+    prevent_initial_call=True
+)
+def harvest_esp_temp_figs(children):
+    if not children:
+        return no_update
+
+    figs = []
+
+    def _walk(node):
+        if node is None:
+            return
+        if isinstance(node, list):
+            for it in node:
+                _walk(it)
+            return
+        if isinstance(node, dict):
+            props = node.get("props", {})
+            comp_type = node.get("type", "")
+            if comp_type == "Graph" and "figure" in props:
+                figs.append(props["figure"])
+            if "children" in props:
+                _walk(props["children"])
+            return
+        # strings/números se ignoran
+
+    _walk(children)
+
+    if not figs:
+        return no_update
+
+    payload = {}
+    for i, fig in enumerate(figs, 1):
+        # Título (si existe)
+        title = ""
+        lt = fig.get("layout", {}).get("title", None)
+        if isinstance(lt, dict):
+            title = (lt.get("text") or "").strip()
+        elif isinstance(lt, str):
+            title = lt.strip()
+        name = title or f"Parámetro {i}"
+        payload[name] = {"title": name, "json": json.dumps(fig)}
+
+    return payload
 
 @callback(
     [Output('output-c3d-upload', 'children'),
@@ -832,10 +937,12 @@ def update_output(contents, filename):
 
 @callback(
     Output('graphs-container', 'children'),
-    [Input('lado-dropdown', 'value'),
-     Input('session-stored-data', 'data')]  
+    Input('lado-dropdown', 'value'),
+    Input('session-stored-data', 'data'),
+    State("_pages_location","pathname")
 )
-def update_graphs(lado, stored_data):
+def update_graphs(lado, stored_data, pathname):
+    
     if stored_data is None:
         return [], no_update
     
@@ -925,7 +1032,7 @@ def update_graphs(lado, stored_data):
     return graphs if graphs else dbc.Alert("No hay datos disponibles para la selección actual", color="warning")
 
 
-import json
+
 
 @callback(
     Output('store-figs-cinematico', 'data'),

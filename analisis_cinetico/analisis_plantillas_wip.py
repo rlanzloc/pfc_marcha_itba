@@ -356,7 +356,7 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
     filt_izq = []
 
     # === Pie IZQUIERDO: spline primero, luego filtro ===
-    for df in dataframes_izq:
+    for df in lowpass_izq:
         # 1️⃣ Suavizar mesetas de saturación con spline
         df_suave = suavizar_saturacion_df_spline_direccion(df, margen=2, delta=2, saturacion = 25, lado='I')
         
@@ -368,7 +368,7 @@ def procesar_plantillas(datos_derecha, datos_izquierda):
         filt_izq.append(df_filtered)
 
     # === Pie DERECHO: spline primero, luego filtro ===
-    for df in dataframes_der:
+    for df in lowpass_der:
         # 1️⃣ Suavizar mesetas de saturación con spline
         df_suave = suavizar_saturacion_df_spline_direccion(df, margen=1, delta=1, saturacion = 25, lado='D')
         
@@ -905,28 +905,6 @@ results_izq = improved_vGRF_detection(ciclos_izq, indices_apoyo_izq, ciclos_comp
 
 
 
-import matplotlib.pyplot as plt
-
-# Asumo que tenés 5 pasadas
-for i in range(5):
-    fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
-
-    # Señal derecha
-    axes[0].plot(sums_der[i].index, sums_der[i].values, color='b')
-    axes[0].set_title(f"Pasada {i+1} - Pie Derecho")
-    axes[0].set_ylabel("Señal")
-
-    # Señal izquierda
-    axes[1].plot(sums_izq[i].index, sums_izq[i].values, color='g')
-    axes[1].set_title(f"Pasada {i+1} - Pie Izquierdo")
-    axes[1].set_ylabel("Señal")
-    axes[1].set_xlabel("Muestras")
-
-    plt.tight_layout()
-    plt.show()
-
-
-
 
 
 def plot_with_diagnosis(senales_completas, results, indices_ciclos, min_tiempos=None):
@@ -1107,7 +1085,7 @@ plot_izquierda_derecha(
     results_der,
     results_izq
 )
-
+plt.show()
 
 def extraer_fases(results, señales, lado="der"):
     for i, (pasada, señal_df) in enumerate(zip(results, señales), start=1):
@@ -1149,8 +1127,8 @@ def extraer_fases(results, señales, lado="der"):
 
 
 
-extraer_fases(results_der, sums_der, lado="der")
-extraer_fases(results_izq, sums_izq, lado="izq")
+'''extraer_fases(results_der, sums_der, lado="der")
+extraer_fases(results_izq, sums_izq, lado="izq")'''
 
 
 
@@ -1326,8 +1304,8 @@ def plot_promedios_comparados(promedios_list, lado="R"):
     plt.legend()
     plt.tight_layout()
     
-plot_promedios_comparados(promedio_der, lado="R")
-plot_promedios_comparados(promedio_izq, lado="L")
+'''plot_promedios_comparados(promedio_der, lado="R")
+plot_promedios_comparados(promedio_izq, lado="L")'''
 
 
 def graficar_suma_por_fases_con_sensores_v2(filt_list, results_list, indices_ciclos_list, lado="R"):
@@ -1395,8 +1373,8 @@ def graficar_suma_por_fases_con_sensores_v2(filt_list, results_list, indices_cic
     
 
 
-graficar_suma_por_fases_con_sensores_v2(filt_der, results_der, indices_apoyo_der, lado="R")
-graficar_suma_por_fases_con_sensores_v2(filt_izq, results_izq, indices_apoyo_izq, lado="L")
+'''graficar_suma_por_fases_con_sensores_v2(filt_der, results_der, indices_apoyo_der, lado="R")
+graficar_suma_por_fases_con_sensores_v2(filt_izq, results_izq, indices_apoyo_izq, lado="L")'''
 
 coord_sensores = pd.DataFrame([
     ['S1', 6.4, 152.1],
@@ -1577,8 +1555,8 @@ def graficar_promedio_por_pie_2D(filt_df_list, results, coord_sensores, pie="Der
 
 
 
-graficar_promedio_por_pie_2D(filt_der, results_der, coord_sensores, pie='Derecho')
-graficar_promedio_por_pie_2D(filt_izq, results_izq, coord_sensores, pie='Izquierdo')
+'''graficar_promedio_por_pie_2D(filt_der, results_der, coord_sensores, pie='Derecho')
+graficar_promedio_por_pie_2D(filt_izq, results_izq, coord_sensores, pie='Izquierdo')'''
 
 
 # === Coordenadas de sensores ===

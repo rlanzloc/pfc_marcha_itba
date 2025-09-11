@@ -8,6 +8,12 @@ app = dash.Dash(__name__, use_pages=True,
                external_stylesheets=[dbc.themes.SPACELAB],
                suppress_callback_exceptions=True)
 
+from pages import pg4  # Análisis Cinético: usa tabs-cinetico, session-stored-cinetico, fig-*
+from pages import analysis  # Análisis Cinemático
+from pages import report  # Reporte
+from pages import pg1 
+
+
 # Configuración para Bootstrap Icons
 app.index_string = '''
 <!DOCTYPE html>
@@ -136,6 +142,8 @@ app.layout = dbc.Container(
         dcc.Store(id='store-figs-cinetico-2', storage_type='session'),
         dcc.Store(id='store-figs-cinematico', storage_type='session'),
         dcc.Store(id='store-patient-info', storage_type='session'),
+        dcc.Store(id='session-stored-cinetico', storage_type='session'),
+        dcc.Store(id="session-stored-data", storage_type="session"),
 
         
 
@@ -166,67 +174,60 @@ app.layout = dbc.Container(
                 "minHeight": "100vh",
                 "backgroundColor": "#f8f9fa"
             }
-        )
+        ),
+        
     ],
     fluid=True,
-    style={"padding": "0", "overflowX": "hidden"}
+    style={"padding": "0", "overflowX": "hidden"},
+
 )
 
+
 app.validation_layout = html.Div([
-    # 1) Tu layout real (toda la app montada)
-    app.layout,
-
-    # 2) Stores globales que usan callbacks en distintas páginas
+    
+    app.layout, 
+    pg4.layout,
+    analysis.layout,
+    report.layout,
+    pg1.layout, 
+    
+    # Stores globales
     dcc.Store(id="__force_resize_token"),
-    dcc.Store(id='store-figs-cinetico', storage_type='session'),
-    dcc.Store(id='store-figs-cinetico-2', storage_type='session'),
-    dcc.Store(id='store-figs-cinematico', storage_type='session'),
-    dcc.Store(id='store-patient-info', storage_type='session'),
+    dcc.Store(id="store-figs-cinetico", storage_type="session"),
+    dcc.Store(id="store-figs-cinetico-2", storage_type="session"),
+    dcc.Store(id="store-figs-cinematico", storage_type="session"),
+    dcc.Store(id="store-patient-info", storage_type="session"),
+    dcc.Store(id="session-stored-cinetico", storage_type="session"),
 
-    # ⚠️ Importante para la página cinética (pg4.py)
-    dcc.Store(id='session-stored-cinetico', storage_type='session'),
+    # ---- Cinético (/pg4) ----
+    dcc.Tabs(id="tabs-cinetico", value="tab-csv"),
+    html.Div(id="tabs-content"),
+    dcc.Upload(id="upload-csv"),
+    html.Div(id="csv-validation"),
+    html.Span(id="port-status-label"),
+    html.Span(id="port-status-dynamic"),
+    html.Div(id="reading-status"),
+    html.Button(id="start-button"),
+    html.Button(id="stop-button"),
+    html.Button(id="refresh-button"),
 
-    # 3) Skeleton de componentes que aparecen en callbacks de la PÁGINA CINÉTICA (pg4.py)
-    #    (aunque no estés en /pg4, esto evita el error de "A nonexistent object was used...")
-    dcc.Tabs(id='tabs', value='tab-csv'),
-    html.Div(id='tabs-content'),
-    dcc.Upload(id='upload-csv'),
-    html.Div(id='csv-validation'),
-    dcc.Graph(id='fig-ciclos'),
-    dcc.Graph(id='fig-fases'),
-    dcc.Graph(id='fig-cop'),
-    dcc.Graph(id='fig-aporte-izq'),
-    dcc.Graph(id='fig-aporte-der'),
+    # ---- Cinemático (/analysis) ----
+    dcc.Upload(id="upload-c3d"),
+    html.Div(id="output-c3d-upload"),
+    html.Div(id="graphs-container"),
+    html.Div(id="parametros-container"),
+    dcc.Store(id="stored-data"),
+    dcc.Store(id="session-stored-data", storage_type="session"),
+    html.Div(id="tabs-container"),
+    dcc.RadioItems(id="lado-dropdown"),
 
-    # Controles/estados serie (aparecen en callbacks de pg4.py)
-    html.Span(id='port-status-label'),
-    html.Span(id='port-status-dynamic'),
-    html.Div(id='reading-status'),
-    html.Button(id='start-button'),
-    html.Button(id='stop-button'),
-    html.Button(id='refresh-button'),
+    # ---- Reporte (/reporte) ----
+    dcc.Checklist(id="reporte-secciones"),
+    html.Button(id="btn-gen-pdf"),
+    html.Div(id="report-status"),
+    dcc.Download(id="download-pdf"),
+], style={"display": "none"})
 
-    # Datos de paciente usados en pg4.py
-    dcc.Store(id='patient-info'),
-    dcc.Input(id='input-nombre'),
-    dcc.Input(id='input-edad'),
-    dcc.Input(id='input-peso'),
-    html.Button(id='btn-save-patient'),
-    html.Div(id='patient-saved-msg'),
-
-    # 4) Skeleton de la PÁGINA CINEMÁTICA (analysis)
-    dcc.Upload(id='upload-c3d'),
-    html.Div(id='output-c3d-upload'),
-    html.Div(id='graphs-container'),
-    html.Div(id='parametros-container'),
-    dcc.Store(id='stored-data'),
-    dcc.Store(id='session-stored-data', storage_type='session'),
-
-    # 5) Skeleton de la PÁGINA DE REPORTE (si la usás)
-    html.Button(id='btn-gen-report'),
-    dcc.Download(id='dl-report'),
-    html.Div(id='report-status'),
-])
 
 
 # CSS personalizado mejorado
@@ -321,24 +322,22 @@ def toggle_sidebar(n, sidebar_style, content_style, btn_style):
     return sidebar_style, content_style, icon, btn_style
 
 
-
-
-# NEW: Client-side callback para forzar relayout de Plotly al togglear
 app.clientside_callback(
     """
-    function(n_clicks, token) {
-        // Espera breve para que se apliquen los estilos de marginLeft
-        setTimeout(function() {
-            window.dispatchEvent(new Event('resize'));
-        }, 150);
-        return (token || 0) + 1;
+    function(token) {
+        if (token > 0) {
+            setTimeout(function() {
+                window.dispatchEvent(new Event('resize'));
+            }, 150);
+        }
+        return token;
     }
     """,
-    Output("__force_resize_token", "data"),
-    Input("sidebar-toggle", "n_clicks"),
-    State("__force_resize_token", "data"),
+    Output("__force_resize_token", "data", allow_duplicate=True),
+    Input("__force_resize_token", "data"),
     prevent_initial_call=True
 )
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))

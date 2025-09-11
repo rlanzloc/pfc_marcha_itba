@@ -1,6 +1,7 @@
 import kineticstoolkit.lab as ktk
 import matplotlib
 import matplotlib.pyplot as plt
+matplotlib.use("Agg")  # <-- agregar ESTA línea ANTES de importar pyplot
 import scipy.spatial.transform as transform
 import kineticstoolkit.external.icp as icp
 from kineticstoolkit.typing_ import ArrayLike, check_param
@@ -9,6 +10,8 @@ import pandas as pd
 
 from scipy.signal import butter, filtfilt
 from scipy.signal import argrelextrema
+
+
 
 
 def procesar_archivo_c3d( filename ):
@@ -287,9 +290,9 @@ def procesar_archivo_c3d( filename ):
         angles.data["X"] = low_pass_filter(angles.data["X"], cutoff_frequency, sampling_rate, order)
 
         # Agrega información adicional a los datos
-        angles = angles.add_data_info("Dorsiflexion", "Unit", "deg")
-        angles = angles.add_data_info("Int/ Ext Rotation", "Unit", "deg")
-        angles = angles.add_data_info("Eversion", "Unit", "deg")
+        angles = angles.add_data_info("Z", "Label", "Dorsiflexión / Plantarflexión")
+        angles = angles.add_data_info("Y", "Label", "Rotación Interna / Externa")
+        angles = angles.add_data_info("X", "Label", "Abducción / Aducción")
 
         # Normalización y promediado
         normalized_Z, normalized_Y, normalized_X = [], [], []
@@ -348,83 +351,9 @@ def procesar_archivo_c3d( filename ):
 
         # Devolver las curvas no excluidas y los promedios
         return curves_dict, average_Z, average_Y, average_X
+        
     
-    def calcular_angulo_pelvis_pie_derecho(markers, ASIS_der, ASIS_izq, RHeel, RToeIn, IC_right, filtered_indices_right):
-        """
-        Calcula pelvic obliquity, pelvic rotation y foot progression angle en base a ciclos válidos,
-        ajustando la dirección de marcha por ciclo.
 
-        Retorna:
-        - angulos_normalizados: diccionario con curvas por ciclo normalizadas
-        - señales_completas: diccionario con las señales completas (no recortadas)
-        """
-        n_frames = markers.time.shape[0]
-
-        # Inicializar arrays con NaN
-        obliquity_deg = np.full(n_frames, np.nan)
-        pelvic_rotation_deg = np.full(n_frames, np.nan)
-        foot_progression_angle_deg = np.full(n_frames, np.nan)
-
-        # Procesar cada ciclo válido
-        for start, end in filtered_indices_right:
-            # Dirección de marcha en plano XZ (usando IC o RHeel como referencia)
-            pelvis_dir = ASIS_der[start:end, [0,1, 2 ]] - ASIS_izq[start:end, [0,1, 2]]
-
-            dir_z = pelvis_dir[2][0]
-
-            # ---- Pelvic Obliquity (plano YZ) ----
-            pelvis_yz = ASIS_der[start:end, [1, 2]] - ASIS_izq[start:end, [1, 2]]
-            if dir_z > 0:
-                obliquity_rad = np.arctan2(pelvis_yz[:, 0], pelvis_yz[:, 1]) # Y contra Z
-            else:
-                obliquity_rad = np.arctan2(pelvis_yz[:, 0], -pelvis_yz[:, 1]) # Y contra Z
-                obliquity_deg[start:end] = np.rad2deg(obliquity_rad)
-
-            # ---- Pelvic Rotation (ángulo pelvis vs dirección de marcha en plano XZ) ----
-            pelvis_xz = ASIS_der[start:end, [0, 2]] - ASIS_izq[start:end, [0, 2]]
-            if dir_z > 0:
-                rotation_rad = np.arctan2(pelvis_xz[:, 0], pelvis_xz[:, 1] ) # X contra Z
-            else:
-                rotation_rad = np.arctan2(-pelvis_xz[:, 0], -pelvis_xz[:, 1] ) # X contra Z
-                pelvic_rotation_deg[start:end] = np.rad2deg(rotation_rad)
-
-            # ---- Foot Progression (ángulo pie vs dirección de marcha en plano XZ) ----
-
-            foot_vector = RToeIn[start:end, [0, 2]] - RHeel[start:end, [0, 2]]
-            if dir_z > 0:
-                ang_rad = np.arctan2(foot_vector[:, 1], foot_vector[:, 0] ) # X contra Z
-            else:
-                ang_rad = np.arctan2(-foot_vector[:, 1],-foot_vector[:, 0] ) # X contra Z
-
-            foot_progression_angle_deg[start:end] = np.rad2deg(ang_rad)
-
-        # --- Normalización por ciclo ---
-        def normalizar_por_ciclo(serie, ciclos):
-            normalizadas = []
-            for c in ciclos:
-                start, end = c
-                ciclo = serie[start:end]
-                if np.isnan(ciclo).all():
-                    continue  # Salta ciclos completamente vacíos
-                t_norm = np.linspace(0, 100, num=len(ciclo))
-                interp = np.interp(np.linspace(0, 100, 100), t_norm, ciclo)
-                normalizadas.append(interp)
-            return np.array(normalizadas)
-
-
-        angulos_normalizados = {
-            "Pelvic_Obliquity": normalizar_por_ciclo(obliquity_deg, filtered_indices_right),
-            "Pelvic_Rotation": normalizar_por_ciclo(pelvic_rotation_deg, filtered_indices_right),
-            "Foot_Progression": normalizar_por_ciclo(foot_progression_angle_deg, filtered_indices_right)
-        }
-
-        señales_completas = {
-            "Pelvic_Obliquity": obliquity_deg,
-            "Pelvic_Rotation": pelvic_rotation_deg,
-            "Foot_Progression": foot_progression_angle_deg
-        }
-
-        return angulos_normalizados, señales_completas
 
     def calcular_angulo_pelvis_pie_izquierdo(markers, ASIS_der, ASIS_izq, LHeel, LToeIn, IC_left, filtered_indices_left):
         """
@@ -448,16 +377,17 @@ def procesar_archivo_c3d( filename ):
             pelvis_dir = ASIS_der[start:end, [0, 1, 2]] - ASIS_izq[start:end, [0, 1, 2]]
             dir_z = pelvis_dir[2][0]
 
+
             # ---- Pelvic Obliquity (plano YZ) ----
             pelvis_yz = ASIS_der[start:end, [1, 2]] - ASIS_izq[start:end, [1, 2]]
             if dir_z < 0:
-                
+
                 obliquity_rad = np.arctan2(pelvis_yz[:, 0], pelvis_yz[:, 1])  # Y contra Z
             else:
                 obliquity_rad = np.arctan2(pelvis_yz[:, 0], -pelvis_yz[:, 1])  # Y contra Z
             obliquity_deg[start:end] = -np.rad2deg((obliquity_rad))
 
-            
+
 
             # ---- Pelvic Rotation (ángulo pelvis vs dirección de marcha en plano XZ) ----
             pelvis_xz = ASIS_der[start:end, [0, 2]] - ASIS_izq[start:end, [0, 2]]
@@ -469,14 +399,13 @@ def procesar_archivo_c3d( filename ):
 
             # ---- Foot Progression (ángulo pie vs dirección de marcha en plano XZ) ----
             foot_vector = LToeIn[start:end, [0, 2]] - LHeel[start:end, [0, 2]]
-            
             if dir_z < 0:
                 ang_rad = np.arctan2(foot_vector[:, 1], foot_vector[:, 0])  # X contra Z
             else:
                 ang_rad =  np.arctan2(-foot_vector[:, 1], -foot_vector[:, 0])  # X contra Z
             foot_progression_angle_deg[start:end] =  np.rad2deg((ang_rad))
-            
-    
+
+
 
 
         # --- Normalización por ciclo ---
@@ -485,14 +414,11 @@ def procesar_archivo_c3d( filename ):
             for c in ciclos:
                 start, end = c
                 ciclo = serie[start:end]
-                if np.isnan(ciclo).all():
-                    continue  # Salta ciclos completamente vacíos
                 t_norm = np.linspace(0, 100, num=len(ciclo))
                 interp = np.interp(np.linspace(0, 100, 100), t_norm, ciclo)
                 normalizadas.append(interp)
             return np.array(normalizadas)
 
-        
 
         angulos_normalizados = {
             "Pelvic_Obliquity": normalizar_por_ciclo(obliquity_deg, filtered_indices_left),
@@ -507,6 +433,94 @@ def procesar_archivo_c3d( filename ):
         }
 
         return angulos_normalizados, señales_completas
+
+
+
+    def calcular_angulo_pelvis_pie_derecho(markers, ASIS_der, ASIS_izq, RHeel, RToeIn, IC_right, filtered_indices_right):
+        """
+        Calcula pelvic obliquity, pelvic rotation y foot progression angle en base a ciclos válidos,
+        ajustando la dirección de marcha por ciclo.
+
+        Retorna:
+        - angulos_normalizados: diccionario con curvas por ciclo normalizadas
+        - señales_completas: diccionario con las señales completas (no recortadas)
+        """
+        n_frames = markers.time.shape[0]
+
+        # Inicializar arrays con NaN
+        obliquity_deg = np.full(n_frames, np.nan)
+        pelvic_rotation_deg = np.full(n_frames, np.nan)
+        foot_progression_angle_deg = np.full(n_frames, np.nan)
+
+        # Procesar cada ciclo válido
+        for start, end in filtered_indices_right:
+            # Dirección de marcha en plano XZ (usando IC o RHeel como referencia)
+            pelvis_dir = ASIS_der[start:end, [0,1, 2 ]] - ASIS_izq[start:end, [0,1, 2]]
+            x=ASIS_der[start:end] - ASIS_izq[start:end]
+
+
+            dir_z = x[0][2]
+
+
+            # ---- Pelvic Obliquity (plano YZ) ----
+            pelvis_yz = ASIS_der[start:end, [1, 2]] - ASIS_izq[start:end, [1, 2]]
+
+            if dir_z > 0:
+                obliquity_rad = np.arctan2(pelvis_yz[:, 0], pelvis_yz[:, 1]) # Y contra Z
+            else:
+                obliquity_rad = np.arctan2(pelvis_yz[:, 0], -pelvis_yz[:, 1]) # Y contra Z
+            obliquity_deg[start:end] = np.rad2deg(obliquity_rad)
+
+            # ---- Pelvic Rotation (ángulo pelvis vs dirección de marcha en plano XZ) ----
+            pelvis_xz = ASIS_der[start:end, [0, 2]] - ASIS_izq[start:end, [0, 2]]
+            if dir_z > 0:
+                rotation_rad = np.arctan2(pelvis_xz[:, 0], pelvis_xz[:, 1] ) # X contra Z
+            else:
+                rotation_rad = np.arctan2(-pelvis_xz[:, 0], -pelvis_xz[:, 1] ) # X contra Z
+            pelvic_rotation_deg[start:end] = np.rad2deg(rotation_rad)
+
+            # ---- Foot Progression (ángulo pie vs dirección de marcha en plano XZ) ----
+
+            foot_vector = RToeIn[start:end, [0, 2]] - RHeel[start:end, [0, 2]]
+            if dir_z > 0:
+                ang_rad = -np.arctan2(foot_vector[:, 1], foot_vector[:, 0] ) # X contra Z
+                
+            else:
+                ang_rad = -np.arctan2(-foot_vector[:, 1],-foot_vector[:, 0] ) # X contra Z
+            
+
+
+            foot_progression_angle_deg[start:end] = np.rad2deg(ang_rad)
+
+
+
+        # --- Normalización por ciclo ---
+        def normalizar_por_ciclo(serie, ciclos):
+            normalizadas = []
+            for c in ciclos:
+                start, end = c
+                ciclo = serie[start:end]
+                t_norm = np.linspace(0, 100, num=len(ciclo))
+                interp = np.interp(np.linspace(0, 100, 100), t_norm, ciclo)
+                normalizadas.append(interp)
+            return np.array(normalizadas)
+
+        angulos_normalizados = {
+            "Pelvic_Obliquity": normalizar_por_ciclo(obliquity_deg, filtered_indices_right),
+            "Pelvic_Rotation": normalizar_por_ciclo(pelvic_rotation_deg, filtered_indices_right),
+            "Foot_Progression": normalizar_por_ciclo(foot_progression_angle_deg, filtered_indices_right)
+        }
+
+        señales_completas = {
+            "Pelvic_Obliquity": obliquity_deg,
+            "Pelvic_Rotation": pelvic_rotation_deg,
+            "Foot_Progression": foot_progression_angle_deg
+        }
+
+        return angulos_normalizados, señales_completas
+
+
+
 
 
 
@@ -568,13 +582,362 @@ def procesar_archivo_c3d( filename ):
 
     markers.data = markers_copy.data
 
-    """## Tibia"""
+
+    #PONER ESTE CODIGO LUEGO DE LAS TRANSFROMACIONES
+    #--------------------------------------------------------
+    #Lo que hace este codigo es seleccionar los segemntos donde efectivamente se esta caminando y
+    # hace la concatenacion de todos los segmentos que hayan. Los convierte en un time series volviendo el tiempo a cero
+    #---------------------------------------------------
+    time_original = markers.time
+    # === 1) Señal y derivada ===
+    waist_x = markers.data["Rashel:WaistBack"][:, 0]  # Eje X de la cintura
+    fs = 100  # Frecuencia de muestreo (ajusta si es distinta)
+    dt = 1 / fs
+    velocity_x = np.gradient(waist_x, dt)
+
+    # === 2) Clasificación de pendiente ===
+    threshold = 0.05  # Ajusta este umbral si hay ruido
+    state = np.where(velocity_x > threshold, 1,
+            np.where(velocity_x < -threshold, -1, 0))
+
+    # === 3) Detectar cambios de signo ===
+    changes = np.where(np.diff(state) != 0)[0] + 1
+    segments = np.split(np.arange(len(waist_x)), changes)
+
+    # === 4) Filtrar solo tramos válidos ===
+    valid_segments = []
+    for seg in segments:
+        if len(seg) < 2:
+            continue
+        s_state = state[seg[0]]
+        if s_state == 0:
+            continue
+        start_x = waist_x[seg[0]]
+        end_x = waist_x[seg[-1]]
+        recorrido = abs(end_x - start_x)
+        if recorrido >= 2.0:
+            valid_segments.append(seg)
+
+
+    def concatenate_multiple_segments(markers: ktk.TimeSeries, segments: list) -> ktk.TimeSeries:
+        """
+        Concatena múltiples segmentos de un TimeSeries en uno solo.
+        - Ajusta cada segmento para que arranque donde terminó el anterior.
+        - segments: lista de arrays de índices válidos.
+        """
+        concatenated_time = []
+        concatenated_data = {key: [] for key in markers.data.keys()}
+
+        cumulative_time = 0.0
+        fs = 100  # Ajusta si tu frecuencia no es 100 Hz
+
+        for seg in segments:
+            # Obtener sub-TimeSeries
+            ts = markers.get_ts_between_indexes(seg[0], seg[-1], inclusive=True)
+
+            # Reajustar tiempo relativo a 0 y sumar acumulado
+            ts_time = ts.time - ts.time[0] + cumulative_time
+
+            # Guardar nuevo tiempo
+            concatenated_time.append(ts_time)
+
+            # Guardar cada canal
+            for key in markers.data.keys():
+                concatenated_data[key].append(ts.data[key])
+
+            # Actualizar acumulado
+            dt = ts.time[1] - ts.time[0]
+            cumulative_time = ts_time[-1] + dt  # para evitar solapamiento
+
+        # Concatenar todo
+        new_time = np.concatenate(concatenated_time)
+        new_data = {key: np.concatenate(concatenated_data[key]) for key in concatenated_data}
+
+        # Crear TimeSeries final
+        ts_concat = ktk.TimeSeries(time=new_time)
+        ts_concat.data = new_data
+
+        return ts_concat
+
+    # === EJEMPLO DE USO ===
+    # Usa tus valid_segments detectados antes:
+    markers = concatenate_multiple_segments(markers, valid_segments)
+
+    #-------------------------------------------------------------
+    # AGREGAMOS ESTO DE ARRIBA PARA QUEDARNOS CON LOS SEGMENTOS DE CAMINATA VALIDOS
+    #-------------------------------------------------------------
+
+    
+
+    #--------------------------------------------------------------------
+    #      AJUSTO SIMETRIA ENTRE DERECHO E IZQUIERDO
+    #-------------------------------------------------------------------
+
+    def encontrar_frame_pies_juntos(markers):
+        """
+        Encuentra el frame donde ambos pies están:
+        - Cerca en X-Z (horizontalmente),
+        - Bajos en Y (apoyados).
+        """
+        rheel = markers.data["Rashel:RHeel"]
+        lheel = markers.data["Rashel:LHeel"]
+
+        # Distancia horizontal entre talones (X-Z)
+        distancia_horizontal = np.linalg.norm(rheel[:, [0, 2]] - lheel[:, [0, 2]], axis=1)
+
+        # Altura promedio (Y) de ambos talones
+        altura_promedio = (rheel[:, 1] + lheel[:, 1]) / 2
+
+        # Penalizamos frames donde los talones están muy altos (no apoyados)
+        score = distancia_horizontal + 10 * np.abs(altura_promedio)  # ajustar el peso si hace falta
+
+        frame_cercano = np.argmin(score)
+        print(f"🔎 Frame con talones más cercanos y bajos: {frame_cercano}")
+        return frame_cercano
+
+    frame_pies_juntos = encontrar_frame_pies_juntos(markers)
+
+
+
+    def corregir_kneeout_adaptativo(markers, frame_ref):
+        """
+        Corrige LKneeOut en todos los frames adaptativamente:
+        - Si está más arriba que RKneeOut: lo baja hacia LShin.
+        - Si está más abajo: lo sube hacia LThigh.
+        Siempre respetando la dirección anatómica en cada frame.
+        """
+
+        # Datos en frame de referencia
+        LKneeOut_ref = markers.data["Rashel:LKneeOut"][frame_ref, :3]
+        RKneeOut_y = markers.data["Rashel:RKneeOut"][frame_ref, 1]
+        delta_y = RKneeOut_y - LKneeOut_ref[1]
+
+        if delta_y > 0:
+            vector_ref = markers.data["Rashel:LShin"][frame_ref, :3] - LKneeOut_ref
+            direccion_str = "↓ bajar hacia LShin"
+        else:
+            vector_ref = markers.data["Rashel:LThigh"][frame_ref, :3] - LKneeOut_ref
+            direccion_str = "↑ subir hacia LThigh"
+
+        if np.abs(vector_ref[1]) < 1e-6:
+            print("⚠️ Vector de referencia sin componente Y. No se puede proyectar.")
+            return
+
+        vector_unit = vector_ref / np.linalg.norm(vector_ref)
+        escala = delta_y / vector_unit[1]  # puede ser positiva o negativa
+
+
+        # Aplicar corrección a cada frame
+        for i in range(markers.time.shape[0]):
+            LKneeOut_i = markers.data["Rashel:LKneeOut"][i, :3]
+
+            if delta_y > 0:
+                target_i = markers.data["Rashel:LShin"][i, :3]
+            else:
+                target_i = markers.data["Rashel:LThigh"][i, :3]
+
+            vector_i = target_i - LKneeOut_i
+            vector_i_unit = vector_i / np.linalg.norm(vector_i)
+            desplazamiento_i = escala * vector_i_unit
+
+            markers.data["Rashel:LKneeOut"][i, :3] += desplazamiento_i
+
+
+
+    corregir_kneeout_adaptativo(markers, frame_pies_juntos)
+
+
+    def corregir_marcador_vertical_adaptativo(markers, nombre_base, marcador_ref, marcador_inf, marcador_sup, frame_ref):
+        """
+        Corrige un marcador izquierdo (ej. LKneeIn) adaptativamente:
+        - Lo baja usando la dirección hacia marcador_inf si está más alto que su par derecho.
+        - Lo sube usando la dirección hacia marcador_sup si está más bajo.
+        Aplica corrección en todos los frames.
+
+        Parámetros:
+        - nombre_base: "KneeIn", "AnkleOut", etc. (sin L/R)
+        - marcador_ref: nombre del marcador espejo derecho (ej. "Rashel:RKneeIn")
+        - marcador_inf: marcador hacia abajo desde el izquierdo (ej. "Rashel:LAnkleIn")
+        - marcador_sup: marcador hacia arriba desde el izquierdo (ej. "Rashel:WaistLFront")
+        """
+
+        nombre_izq = f"Rashel:{nombre_base}"
+        ref_y = markers.data[marcador_ref][frame_ref, 1]
+        punto_izq_ref = markers.data[nombre_izq][frame_ref, :3]
+        delta_y = ref_y - punto_izq_ref[1]
+
+        if delta_y > 0:
+            direccion_ref = markers.data[marcador_inf][frame_ref, :3] - punto_izq_ref
+            direccion_str = f"↓ bajar hacia {marcador_inf.split(':')[1]}"
+        else:
+            direccion_ref = markers.data[marcador_sup][frame_ref, :3] - punto_izq_ref
+            direccion_str = f"↑ subir hacia {marcador_sup.split(':')[1]}"
+
+        if np.abs(direccion_ref[1]) < 1e-6:
+            print(f"⚠️ Vector de referencia sin componente Y para {nombre_izq}. No se puede proyectar.")
+            return
+
+        direccion_unit = direccion_ref / np.linalg.norm(direccion_ref)
+        escala = delta_y / direccion_unit[1]
+
+        # Aplicar en todos los frames
+        for i in range(markers.time.shape[0]):
+            punto_izq = markers.data[nombre_izq][i, :3]
+            if delta_y > 0:
+                objetivo = markers.data[marcador_inf][i, :3]
+            else:
+                objetivo = markers.data[marcador_sup][i, :3]
+
+            direccion = objetivo - punto_izq
+            direccion_unit_i = direccion / np.linalg.norm(direccion)
+            markers.data[nombre_izq][i, :3] += escala * direccion_unit_i
+
+
+
+    corregir_marcador_vertical_adaptativo(
+        markers,
+        nombre_base="LKneeIn",
+        marcador_ref="Rashel:RKneeIn",
+        marcador_inf="Rashel:LAnkleIn",
+        marcador_sup="Rashel:WaistLFront",
+        frame_ref=frame_pies_juntos
+    )
+
+
+
+    def corregir_waist_front_left(markers, frame_ref):
+        """
+        Corrige Rashel:WaistLFront para que iguale la altura (Y) de Rashel:WaistRFront,
+        desplazándose a lo largo de la dirección formada con Rashel:LShin.
+        """
+        m_waistL = "Rashel:WaistLFront"
+        m_waistR = "Rashel:WaistRFront"
+        m_shinL = "Rashel:LShin"
+
+        waistL_ref = markers.data[m_waistL][frame_ref, :3]
+        waistR_y = markers.data[m_waistR][frame_ref, 1]
+
+        delta_y = waistR_y - waistL_ref[1]
+
+        # Vector desde WaistLFront → LShin (definiendo dirección vertical local)
+        direccion_ref = markers.data[m_shinL][frame_ref, :3] - waistL_ref
+
+        if np.abs(direccion_ref[1]) < 1e-6:
+            print("⚠️ Vector entre WaistLFront y LShin sin componente Y. No se puede proyectar.")
+            return
+
+        direccion_unit = direccion_ref / np.linalg.norm(direccion_ref)
+        escala = delta_y / direccion_unit[1]  # cuánto hay que avanzar sobre esa línea
+
+        # Aplicar corrección en todos los frames
+        for i in range(markers.time.shape[0]):
+            waistL_i = markers.data[m_waistL][i, :3]
+            shinL_i = markers.data[m_shinL][i, :3]
+
+            dir_i = shinL_i - waistL_i
+            if np.linalg.norm(dir_i) < 1e-6:
+                continue
+
+            dir_i_unit = dir_i / np.linalg.norm(dir_i)
+            markers.data[m_waistL][i, :3] += escala * dir_i_unit
+
+        print(f"✔️ Corregido {m_waistL} hacia altura de {m_waistR} siguiendo línea con {m_shinL}")
+
+    corregir_waist_front_left(markers, frame_pies_juntos)
+
+    def corregir_ankleout_left(markers, frame_ref):
+        """
+        Corrige Rashel:LAnkleOut para igualar la altura de Rashel:RAnkleOut,
+        desplazándolo sobre la línea que une LAnkleOut y LThigh.
+        """
+        m_ankleL = "Rashel:LAnkleOut"
+        m_ankleR = "Rashel:RAnkleOut"
+        m_thighL = "Rashel:LThigh"
+
+        ankleL_ref = markers.data[m_ankleL][frame_ref, :3]
+        ankleR_y = markers.data[m_ankleR][frame_ref, 1]
+
+        delta_y = ankleR_y - ankleL_ref[1]
+
+        # Dirección anatómica desde tobillo hacia muslo (sube)
+        direccion_ref = markers.data[m_thighL][frame_ref, :3] - ankleL_ref
+
+        if np.abs(direccion_ref[1]) < 1e-6:
+            print("⚠️ Vector entre LAnkleOut y LThigh sin componente Y. No se puede proyectar.")
+            return
+
+        direccion_unit = direccion_ref / np.linalg.norm(direccion_ref)
+        escala = delta_y / direccion_unit[1]
+
+        # Aplicar en todos los frames
+        for i in range(markers.time.shape[0]):
+            ankleL_i = markers.data[m_ankleL][i, :3]
+            thighL_i = markers.data[m_thighL][i, :3]
+
+            dir_i = thighL_i - ankleL_i
+            if np.linalg.norm(dir_i) < 1e-6:
+                continue
+
+            dir_i_unit = dir_i / np.linalg.norm(dir_i)
+            markers.data[m_ankleL][i, :3] += escala * dir_i_unit
+
+        print(f"✔️ Corregido {m_ankleL} hacia altura de {m_ankleR} siguiendo línea con {m_thighL}")
+
+    corregir_ankleout_left(markers, frame_pies_juntos)
+
+
+    def corregir_anklein_left(markers, frame_ref):
+        """
+        Corrige Rashel:LAnkleIn para igualar la altura de Rashel:RAnkleIn,
+        desplazándolo sobre la línea que une LAnkleIn y LKneeIn.
+        """
+        m_ankleL = "Rashel:LAnkleIn"
+        m_ankleR = "Rashel:RAnkleIn"
+        m_kneeL = "Rashel:LKneeIn"
+
+        ankleL_ref = markers.data[m_ankleL][frame_ref, :3]
+        ankleR_y = markers.data[m_ankleR][frame_ref, 1]
+
+        delta_y = ankleR_y - ankleL_ref[1]
+
+        # Dirección anatómica desde tobillo hacia rodilla (sube)
+        direccion_ref = markers.data[m_kneeL][frame_ref, :3] - ankleL_ref
+
+        if np.abs(direccion_ref[1]) < 1e-6:
+            print("⚠️ Vector entre LAnkleIn y LKneeIn sin componente Y. No se puede proyectar.")
+            return
+
+        direccion_unit = direccion_ref / np.linalg.norm(direccion_ref)
+        escala = delta_y / direccion_unit[1]
+
+        # Aplicar en todos los frames
+        for i in range(markers.time.shape[0]):
+            ankleL_i = markers.data[m_ankleL][i, :3]
+            kneeL_i = markers.data[m_kneeL][i, :3]
+
+            dir_i = kneeL_i - ankleL_i
+            if np.linalg.norm(dir_i) < 1e-6:
+                continue
+
+            dir_i_unit = dir_i / np.linalg.norm(dir_i)
+            markers.data[m_ankleL][i, :3] += escala * dir_i_unit
+
+        print(f"✔️ Corregido {m_ankleL} hacia altura de {m_ankleR} siguiendo línea con {m_kneeL}")
+
+    corregir_anklein_left(markers, frame_pies_juntos)
+
+
+
+    #--------------------------------------------------------------------------
+    # TERMINA ACA
+    #--------------------------------------------------------------------------
+
+
+
+
 
     #-------------------------------------------------------------------------------------------------
     # DEFINIMOS COORDENADAS LOCALES CON REFERENCIAS ANATOMICAS PARA EL TOBILLO
-
-
-    # Lado derecho
     IC_right = 0.5 * (markers.data["Rashel:RKneeOut"] + markers.data["Rashel:RKneeIn"])
     MM_right = markers.data["Rashel:RAnkleIn"]
     LM_right = markers.data["Rashel:RAnkleOut"]
@@ -582,7 +945,7 @@ def procesar_archivo_c3d( filename ):
     LC_right = markers.data["Rashel:RKneeOut"]
     MC_right = markers.data["Rashel:RKneeIn"]
 
-    # Lado izquierdo
+        # Lado izquierdo
     IC_left = 0.5 * (markers.data["Rashel:LKneeOut"] + markers.data["Rashel:LKneeIn"])
     MM_left = markers.data["Rashel:LAnkleIn"]
     LM_left = markers.data["Rashel:LAnkleOut"]
@@ -590,16 +953,14 @@ def procesar_archivo_c3d( filename ):
     LC_left = markers.data["Rashel:LKneeOut"]
     MC_left = markers.data["Rashel:LKneeIn"]
 
-    # Calcular el vector normal y el vector con origen
-    # Calcular vectores perpendiculares para ambos lados
+
     perp_torsional_right = calcular_vector_perpendicular(MM_right, IC_right, LM_right)
     perp_frontal_right = calcular_vector_perpendicular(LC_right, IM_right, MC_right)
 
     perp_torsional_left = calcular_vector_perpendicular(LM_left, IC_left, MM_left)
     perp_frontal_left = calcular_vector_perpendicular(MC_left , IM_left, LC_left)
+    #perp_frontal_left = calcular_vector_perpendicular(markers.data["Rashel:LToeIn"], markers.data["Rashel:LHeel"], IC_left)
 
-
-    #TIBIA Lado derecho
     origen_tibia_right = IM_right
     Z_tibia_right = LM_right - MM_right
     Y_tibia_right = IC_right - IM_right
@@ -613,7 +974,6 @@ def procesar_archivo_c3d( filename ):
     frames.data["TibiaRodilla_Right"] = ktk.geometry.create_frames(origin=origen_tibia_right_knee, z=Z_tibia_right, xz=X_tibia_right)
 
 
-    #TIBIA Lado izquierdo
     origen_tibia_left = IM_left
     Z_tibia_left =  MM_left - LM_left
     Y_tibia_left = IC_left - IM_left
@@ -625,9 +985,7 @@ def procesar_archivo_c3d( filename ):
 
     frames.data["TibiaRodilla_Left"] = ktk.geometry.create_frames(origin=origen_tibia_left_knee, z=Z_tibia_left, xz= -X_tibia_left)
 
-    """## Tobillo"""
 
-    #TOBILLO Lado derecho
     origen_tobillo_right = IM_right
     Y_tobillo_right = IC_right - IM_right
     X_tobillo_right = perp_frontal_right
@@ -637,15 +995,24 @@ def procesar_archivo_c3d( filename ):
     frames.data["Calcaneus_Right"] = ktk.geometry.create_frames(origin=origen_tobillo_right, x=X_tobillo1_right, xy=Y_tobillo_right)
 
 
-    #TOBILLO Lado izquierdo
+        #TOBILLO Lado izquierdo
     origen_tobillo_left = IM_left
     Y_tobillo_left =   IC_left - IM_left
     X_tobillo_left = perp_frontal_left
     X_tobillo1_left =  markers.data["Rashel:LToeIn"] - markers.data["Rashel:LHeel"]
 
-    frames.data["Calcaneus_Left"] = ktk.geometry.create_frames(origin=origen_tobillo_left, x=-X_tobillo1_left, xy=Y_tobillo_left)
 
-    """## Femur"""
+    # Normal (Z) ortogonal
+    Z_tobillo_left = calcular_vector_perpendicular(markers.data["Rashel:LHeel"],markers.data["Rashel:LToeIn"],  IC_left)
+
+
+        # Frame final
+    frames.data["Calcaneus_Left"] = ktk.geometry.create_frames(
+        origin=origen_tobillo_left,
+    x=-X_tobillo1_left,
+        xz=Z_tobillo_left
+    )
+
 
     ASIS_der = markers.data['Rashel:WaistRFront']
     ASIS_izq = markers.data['Rashel:WaistLFront']
@@ -682,7 +1049,7 @@ def procesar_archivo_c3d( filename ):
 
     z_value_r = R[:, 2]  # Selecciona todos los valores de la tercera columna
     x_value_r = R[:,0]
-    # Aplicar la condición a todo el array
+        # Aplicar la condición a todo el array
     R_z = np.where(z_value_r < 0, 1, np.where(z_value_r > 0, -1, 0))
     R_x = np.where(z_value_r < 0, -1, np.where(z_value_r > 0, 1, 0))
     R[:] = 1  #hago una matriz de unos para poder multiplicar por  hip_XYZ
@@ -690,12 +1057,11 @@ def procesar_archivo_c3d( filename ):
     R[:, 2] = R_z
 
     origen_hip_right  = mid_ASIS +  R * hip_XYZ
-
     L = ASIS_der - mid_ASIS
 
     z_value = L[:, 2]  # Selecciona todos los valores de la tercera columna
     x_value = L[:,0]
-    # Aplicar la condición a todo el array
+        # Aplicar la condición a todo el array
     L_z = np.where(z_value < 0, -1, np.where(z_value > 0, 1, 0))
     L_x = np.where(z_value < 0, -1, np.where(z_value > 0, 1, 0))
     L[:] = 1  #hago una matriz de unos para poder multiplicar por  hip_XYZ
@@ -707,7 +1073,7 @@ def procesar_archivo_c3d( filename ):
 
 
 
-    #FEMUR Lado Derecho
+        #FEMUR Lado Derecho
 
     origen_femur_right = IC_right
     Y_femur_right = origen_hip_right - mid_FE_right
@@ -724,7 +1090,7 @@ def procesar_archivo_c3d( filename ):
     frames.data["Femur_Right"] = ktk.geometry.create_frames(origin=origen_femur_right, y=Y_femur_right, yz=YZ_femur_right)
 
 
-    #FEMUR Lado Izquiero
+        #FEMUR Lado Izquiero
 
     origen_femur_left = IC_left
     Y_femur_left = origen_hip_left - mid_FE_left
@@ -737,7 +1103,6 @@ def procesar_archivo_c3d( filename ):
 
     frames.data["Femur_Left"] = ktk.geometry.create_frames(origin=origen_femur_left, y=-Y_femur_left, yz=YZ_femur_left)
 
-    """## Cadera"""
 
     #CADERA  Lado derecho
     Z_hip_right = ASIS_der - ASIS_izq
@@ -745,13 +1110,13 @@ def procesar_archivo_c3d( filename ):
 
     frames.data["Hip_Right"] = ktk.geometry.create_frames(origin=origen_hip_right, z=Z_hip_right, xz=XZ_hip_right)
 
+
     #CADERA  Lado izquierdo
     Z_hip_left = ASIS_der- ASIS_izq
     XZ_hip_left = mid_ASIS- mid_PSIS
 
     frames.data["Hip_Left"] = ktk.geometry.create_frames(origin=origen_hip_left, z=Z_hip_left, xz=-XZ_hip_left)
 
-    """## Calculamos los angulos"""
 
     Tibia_to_calcaneus_Right = ktk.geometry.get_local_coordinates(frames.data["Calcaneus_Right"], frames.data["Tibia_Right"])
     Femur_to_tibia_Right= ktk.geometry.get_local_coordinates( frames.data["FemurRodilla_Right"], frames.data["TibiaRodilla_Right"])
@@ -761,6 +1126,12 @@ def procesar_archivo_c3d( filename ):
     Femur_to_tibia_Left= ktk.geometry.get_local_coordinates( frames.data["FemurRodilla_Left"], frames.data["TibiaRodilla_Left"])
     Hip_to_femur_Left = ktk.geometry.get_local_coordinates(frames.data["Femur_Left"], frames.data["Hip_Left"])
 
+
+
+
+
+
+
     # --- Procesamiento de ciclos de marcha ---
     heel_r = markers.data["Rashel:RHeel"][:, 1]
     heel_l = markers.data["Rashel:LHeel"][:, 1]
@@ -768,9 +1139,15 @@ def procesar_archivo_c3d( filename ):
     heel_l = low_pass_filter(heel_l, cutoff=15, fs=100, order=3)
     time = markers.time  # Tiempo correspondiente a los datos
 
+
+
+    
+
     # Detección de ciclos
     min_indices_right = argrelextrema(heel_r, np.less, order=20)[0]
+    min_times_right = time[min_indices_right] 
     min_indices_left = argrelextrema(heel_l, np.less, order=20)[0]
+    min_times_left = time[min_indices_left]  # Tiempos de los mínimos
 
     # Exclusión de ciclos anómalos
     excluded_cycles_right, final_cycles_right = find_cycles_to_exclude(heel_r, markers.time, min_indices_right, 0.5, 0.4, 0.4)
@@ -787,6 +1164,16 @@ def procesar_archivo_c3d( filename ):
     cambios_de_signo = np.where(np.diff(np.sign(z_value_dir)) != 0)[0] + 1
     segmentos = np.split(np.arange(len(markers.time)), cambios_de_signo)
 
+    # Excluir ciclos para el talón derecho
+    filtered_indices_right, filtered_times_right = exclude_cycles(
+        min_indices_right, min_times_right, excluded_cycles_right
+    )
+
+    # Excluir ciclos para el talón izquierdo
+    filtered_indices_left, filtered_times_left = exclude_cycles(
+        min_indices_left, min_times_left, excluded_cycles_left
+    )
+
     # Eliminar último paso de cada segmento
     filtered_indices_right, filtered_indices_left, filtered_times_right, filtered_times_left, \
     final_cycles_right, final_cycles_left, excluded_cycles_right, excluded_cycles_left = eliminar_ultimo_paso(
@@ -795,17 +1182,51 @@ def procesar_archivo_c3d( filename ):
         markers.time, segmentos
     )
 
-    # Procesar todas las articulaciones
-    curvas_tobillo_derecho, _, _, _ = procesar_articulacion(Tibia_to_calcaneus_Right, "Tobillo Derecho", (-30, 30), filtered_indices_right)
-    curvas_tobillo_izquierdo, _, _, _ = procesar_articulacion(Tibia_to_calcaneus_Left, "Tobillo Izquierdo", (-30, 30), filtered_indices_left)
-    
-    # Procesar todas las articulaciones
-    curvas_rodilla_derecha, _, _, _ = procesar_articulacion(Femur_to_tibia_Right, "Rodilla Derecha", (-20, 70), filtered_indices_right)
-    curvas_rodilla_izquierda, _, _, _ = procesar_articulacion(Femur_to_tibia_Left, "Rodilla Izquierda", (-20, 70), filtered_indices_left)
+    filtered_indices_right =  [arr.tolist() for arr in filtered_indices_right]
+    filtered_indices_left =  [arr.tolist() for arr in filtered_indices_left]
+    filtered_times_right =  [arr.tolist() for arr in filtered_times_right]
+    filtered_times_left =  [arr.tolist() for arr in filtered_times_left]
 
-    # Procesar todas las articulaciones
-    curvas_cadera_derecha, _, _, _ = procesar_articulacion(Hip_to_femur_Right, "Cadera Derecha", (-20, 60), filtered_indices_right)
-    curvas_cadera_izquierda, _, _, _ = procesar_articulacion(Hip_to_femur_Left, "Cadera Izquierda", (-20, 60), filtered_indices_left)
+
+
+    
+
+
+    curves_tobillo_derecho, tobillo_derecho_Z, tobillo_derecho_Y, tobillo_derecho_X = procesar_articulacion(
+    Tibia_to_calcaneus_Right, "Tobillo Derecho", (-30, 30) , filtered_indices_right)
+    curvas_tobillo_derecho = pd.DataFrame(curves_tobillo_derecho)
+
+    # Procesar Tobillo Izquierdo
+    curves_tobillo_izquierdo, tobillo_izquierdo_Z, tobillo_izquierdo_Y, tobillo_izquierdo_X = procesar_articulacion(
+        Tibia_to_calcaneus_Left, "Tobillo Izquierdo", (-30, 30), filtered_indices_left )
+    curvas_tobillo_izquierdo = pd.DataFrame(curves_tobillo_izquierdo)
+
+    # Procesar Rodilla Derecha
+    curves_rodilla_derecha, rodilla_derecha_Z, rodilla_derecha_Y, rodilla_derecha_X = procesar_articulacion(
+        Femur_to_tibia_Right, "Rodilla Derecha", (-20, 70) , filtered_indices_right)
+    curvas_rodilla_derecha = pd.DataFrame(curves_rodilla_derecha)
+
+    # Procesar Rodilla Izquierda
+    curves_rodilla_izquierda, rodilla_izquierda_Z, rodilla_izquierda_Y, rodilla_izquierda_X = procesar_articulacion(
+        Femur_to_tibia_Left, "Rodilla Izquierda",  (-20, 70), filtered_indices_left )
+    curvas_rodilla_izquierda = pd.DataFrame(curves_rodilla_izquierda)
+
+    # Procesar Cadera Derecha
+    curves_cadera_derecha, cadera_derecha_Z, cadera_derecha_Y, cadera_derecha_X = procesar_articulacion(
+        Hip_to_femur_Right, "Cadera Derecha", (-20, 60), filtered_indices_right)
+    curvas_cadera_derecha = pd.DataFrame(curves_cadera_derecha)
+
+    # Procesar Cadera Izquierda
+    curves_cadera_izquierda, cadera_izquierda_Z, cadera_izquierda_Y, cadera_izquierda_X = procesar_articulacion(
+        Hip_to_femur_Left, "Cadera Izquierda", (-20, 60) , filtered_indices_left )
+    curvas_cadera_izquierda = pd.DataFrame(curves_cadera_izquierda)
+    
+    
+
+
+
+
+    #---------------------pelvis y progresion del pie
 
     RHeel = markers.data["Rashel:RHeel"]
     RToeIn = markers.data["Rashel:RToeIn"]
@@ -1087,7 +1508,7 @@ def procesar_archivo_c3d( filename ):
             "cadencia": cadencia_global,
             "num_ciclos_derecho": len(filtered_indices_right),
             "num_ciclos_izquierdo": len(filtered_indices_left),
-            "num_pasos": len(all_steps),
+            "num_pasos": total_pasos,
             "tiempo_balanceo_derecho": avg_swing_der, 
             "tiempo_apoyo_derecho": avg_stance_der, 
             "tiempo_balanceo_izquierdo": avg_swing_izq, 

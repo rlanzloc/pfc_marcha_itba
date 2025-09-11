@@ -13,6 +13,7 @@ import plotly.express as px
 import time
 import traceback
 from dash import no_update
+from dash import callback_context
 
 dash.register_page(__name__, path="/pg4", name='Análisis Cinético', icon="file-earmark-text")
 from analisis_plantillas import procesar_archivo_plantillas
@@ -30,6 +31,8 @@ buffer_izq = []
 df_der = pd.DataFrame()
 df_izq = pd.DataFrame()
 lock = threading.Lock()
+
+
 
 def leer_datos(arduino, dataframe, pie):
     global reading
@@ -97,87 +100,22 @@ def inicializar_puertos_y_hilos():
 header_compacto = html.Div([
     html.Div([
         dbc.InputGroup([
-            dbc.Input(id="input-nombre", placeholder="Nombre", type="text",
+            dbc.Input(id="input-nombre-cin", placeholder="Nombre", type="text",
                       size="sm", style={"flex": "0 0 100px"}),   # ⬅️ clave
-            dbc.Input(id="input-edad", placeholder="Edad", type="number", min=0, step=1,
+            dbc.Input(id="input-edad-cin", placeholder="Edad", type="number", min=0, step=1,
                       size="sm", style={"flex": "0 0 70px", "textAlign": "center"}),
-            dbc.Input(id="input-peso", placeholder="Peso", type="number", min=0, step=0.1,
-                      size="sm", style={"flex": "0 0 70px", "textAlign": "center"}),
-            dbc.Button("Guardar", id="btn-save-patient", size="sm", color="primary",
+            dbc.Input(id="input-peso-cin", placeholder="Peso", type="number", min=0, step=0.1,
+                      size="sm", style={"flex": "0 0 70px", "textAlign": "center" }),
+            dbc.Button("Guardar", id="btn-save-patient-cin", size="sm", color="primary",
                        style={"flex": "0 0 auto"})
         ], size="sm", className="me-2"),
 
-        html.Small(id="patient-saved-msg", children="", style={"color": "#6c757d", "marginTop": "4px", "display": "block"}),
+        html.Small(id="patient-saved-msg-cin", children="", style={"color": "#6c757d", "marginTop": "4px", "display": "block"}),
     ], style={"display": "flex", "flexDirection": "column", "alignItems": "flex-start", "gap": "4px"}),
 
     html.H1("Análisis Cinético", style={"margin": "6px 0 0 0", "fontWeight": "700", "color": "#2c3e50",
                                         "lineHeight": "1.1", "textAlign": "center", "width": "100%"}),
 ], style={"display": "flex", "flexDirection": "column", "gap": "8px", "marginBottom": "8px"})
-
-
-
-
-
-layout = html.Div([
-    dcc.Store(id='patient-info', storage_type='session'),
-    dcc.Store(id='session-stored-cinetico', storage_type='session'),
-    header_compacto,
-    
-    # Pestañas
-    dcc.Tabs(id='tabs-cinetico', value='tab-csv', children=[
-        dcc.Tab(label='Importar CSV', value='tab-csv',
-            style={
-                'borderTop': '1px solid #d6d6d6',
-                'borderLeft': '1px solid #d6d6d6',
-                'borderRight': '1px solid #d6d6d6',
-                'borderBottom': 'none',
-                'padding': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold',
-                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
-                'color': '#555'
-            },
-            selected_style={
-                'borderTop': '2px solid #428bca',
-                'borderLeft': '1px solid #d6d6d6',
-                'borderRight': '1px solid #d6d6d6',
-                'borderBottom': 'none',
-                'padding': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold',
-                'backgroundColor': 'white',
-                'color': '#2c3e50'
-            }),   
-        dcc.Tab(label='Lectura en Vivo de Sensores', value='tab-sensores',
-            style={
-                'borderTop': '1px solid #d6d6d6',
-                'borderLeft': '1px solid #d6d6d6',
-                'borderRight': '1px solid #d6d6d6',
-                'borderBottom': 'none',
-                'padding': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold',
-                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
-                'color': '#555'
-            },
-            selected_style={
-                'borderTop': '2px solid #428bca',
-                'borderLeft': '1px solid #d6d6d6',
-                'borderRight': '1px solid #d6d6d6',
-                'borderBottom': 'none',
-                'padding': '12px',
-                'fontSize': '16px',
-                'fontWeight': 'bold',
-                'backgroundColor': 'white',
-                'color': '#2c3e50'
-            }),
-
-    ]),
-
-    html.Div(id='tabs-content'),
-
-])
-
 
 def render_tab(tab):
 
@@ -237,64 +175,153 @@ def render_tab(tab):
                 ),
                 html.Div(id='csv-validation'),
             ], style={'flex': '1 1 auto', 'minWidth': 0})
-
-
         ], style={
             'display': 'flex','alignItems': 'flex-start',
             'justifyContent': 'space-between','gap': '16px','flexWrap': 'wrap',
             'marginBottom': '8px'
         })
 
-        graficos_row = html.Div([
-            # 🎯 GRÁFICOS CINÉTICOS
-            html.Div([
-                html.Div([ dcc.Graph(id='fig-ciclos', style={'height':'320px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
-                html.Div([ dcc.Graph(id='fig-fases',  style={'height':'480px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
-                html.Div([ dcc.Graph(id='fig-cop',    style={'height':'100%','width':'100%'}, config={'responsive': True}) ], className='graph-card full cop-card', style={'height': '600px', 'overflow': 'hidden', 'minWidth': 0}),
-                html.Div([ dcc.Graph(id='fig-aporte-izq', style={'height':'360px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
-                html.Div([ dcc.Graph(id='fig-aporte-der', style={'height':'360px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
-            ], className='graph-grid')
-        ])
-
-        return html.Div([header_row, graficos_row])
+        return html.Div([header_row])
 
     # Fallback
     return html.Div()
 
 
+layout = html.Div([
+    dcc.Store(id='patient-info', storage_type='session'),
+    header_compacto,
+    
+    # Pestañas
+    dcc.Tabs(id='tabs-cinetico', value='tab-csv', children=[
+        dcc.Tab(label='Importar CSV', value='tab-csv',
+            style={
+                'borderTop': '1px solid #d6d6d6',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                'color': '#555'
+            },
+            selected_style={
+                'borderTop': '2px solid #428bca',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'white',
+                'color': '#2c3e50'
+            }),   
+        dcc.Tab(label='Lectura en Vivo de Sensores', value='tab-sensores',
+            style={
+                'borderTop': '1px solid #d6d6d6',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'rgba(240, 240, 240, 0.5)',
+                'color': '#555'
+            },
+            selected_style={
+                'borderTop': '2px solid #428bca',
+                'borderLeft': '1px solid #d6d6d6',
+                'borderRight': '1px solid #d6d6d6',
+                'borderBottom': 'none',
+                'padding': '12px',
+                'fontSize': '16px',
+                'fontWeight': 'bold',
+                'backgroundColor': 'white',
+                'color': '#2c3e50'
+            }),
+
+    ]),
+
+    html.Div(id='tabs-content', children=render_tab('tab-csv')),
+    
+    # 🎯 GRÁFICOS CINÉTICOS - MOVED FROM render_tab() TO MAIN LAYOUT
+    html.Div([
+        html.Div([ dcc.Graph(id='fig-ciclos', style={'height':'320px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+        html.Div([ dcc.Graph(id='fig-fases',  style={'height':'480px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+        html.Div([ dcc.Graph(id='fig-cop',    style={'height':'100%','width':'100%'}, config={'responsive': True}) ], className='graph-card full cop-card', style={'height': '600px', 'overflow': 'hidden', 'minWidth': 0}),
+        html.Div([ dcc.Graph(id='fig-aporte-izq', style={'height':'360px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+        html.Div([ dcc.Graph(id='fig-aporte-der', style={'height':'360px','width':'100%'}, config={'responsive': True}) ], className='graph-card full'),
+    ], className='graph-grid', id='graphs-container', style={'display': 'none'})  # Hidden by default
+
+])
+
+
+
 @callback(
-    Output('patient-info', 'data'),
-    Output('patient-saved-msg', 'children'),
-    Output('input-nombre', 'value'),
-    Output('input-edad', 'value'),
-    Output('input-peso', 'value'),
-    Output('store-patient-info', 'data'),
-    Input('btn-save-patient', 'n_clicks'),
-    State('input-nombre', 'value'),
-    State('input-edad', 'value'),
-    State('input-peso', 'value'),
+    Output('store-patient-info', 'data', allow_duplicate=True),
+    Output('patient-saved-msg-cin', 'children'),
+    Input('btn-save-patient-cin', 'n_clicks'),
+    State('input-nombre-cin', 'value'),
+    State('input-edad-cin', 'value'),
+    State('input-peso-cin', 'value'),
+    State('store-patient-info', 'data'),
     prevent_initial_call=True
 )
-def save_patient(n, nombre, edad, peso):
-    data = {
-        'nombre': (nombre or '').strip(),
-        'edad': int(edad) if edad not in (None, "") else None,
-        'peso': float(peso) if peso not in (None, "") else None
-    }
-    msg = f"Datos: {data['nombre'] or '—'} • {data['edad'] or '—'} años • {data['peso'] or '—'} kg" \
-          if any(v not in (None, '') for v in data.values()) else "Sin datos"
-    # limpiamos inputs y copiamos al store global
-    return data, msg, "", None, None, data
+def save_patient_cin(n, nombre, edad, peso, current):
+    if not n:
+        return no_update, no_update
+    data = dict(current or {})
+    data.update({
+        "nombre": (nombre or "").strip(),
+        "edad":   int(edad) if edad not in (None, "") else None,
+        "peso":   float(peso) if peso not in (None, "") else None,
+    })
+    msg = (
+        f"✅ Datos guardados: {data['nombre'] or '—'} • "
+        f"{data['edad'] if data['edad'] is not None else '—'} años • "
+        f"{data['peso'] if data['peso'] is not None else '—'} kg"
+        if any(v not in (None, '') for v in data.values()) else "Sin datos"
+    )
+    return data, msg
+
+
+@callback(
+    Output('input-nombre-cin', 'value'),
+    Output('input-edad-cin', 'value'),
+    Output('input-peso-cin', 'value'),
+    Input('store-patient-info', 'data'),
+    allow_duplicate=True
+)
+def load_patient_cin(data):
+    if not data:
+        return "", None, None
+    return data.get("nombre",""), data.get("edad", None), data.get("peso", None)
+
+
 
 
 # ---------- Callback para mostrar contenido de pestañas ----------
 @callback(
     Output('tabs-content', 'children'),
     Input('tabs-cinetico', 'value'),
-    #prevent_initial_call=True
+    prevent_initial_call=True 
 )
+
 def render_content(tab):
     return render_tab(tab)
+
+# ---------- Callback para mostrar/ocultar gráficos ----------
+@callback(
+    Output('graphs-container', 'style'),
+    Input('tabs-cinetico', 'value')
+)
+
+def show_hide_graphs(tab):
+    if tab == 'tab-csv':
+        return {'display': 'block'}
+    else:
+        return {'display': 'none'}
+
 
 # ---------- Renderizado dinámico de pestañas ----------    
 @callback(
@@ -310,6 +337,7 @@ def render_content(tab):
     Input('refresh-button', 'n_clicks'),
     prevent_initial_call=True
 )
+
 def controlar_puertos_y_lectura(n_start, n_stop, n_refresh):
     global puerto_disponible, lectura_ya_iniciada, reading
     global buffer_izq, buffer_der, df_izq, df_der 
@@ -464,9 +492,14 @@ def controlar_puertos_y_lectura(n_start, n_stop, n_refresh):
     Input('upload-csv', 'contents'),
     State('upload-csv', 'filename'),
     State('session-stored-cinetico', 'data'),
+    State('_pages_location', 'pathname'),
     prevent_initial_call=True
 )
-def handle_csv_upload(contents, filename, stored_data):
+
+def handle_csv_upload(contents, filename, stored_data, pathname):
+    if pathname != "/pg4":   # ruta registrada de esta página
+        raise PreventUpdate
+    
     if stored_data is None:
         stored_data = {'izq': None, 'der': None}
     expected_cols_izq = ['Hora', 'Tiempo'] + [f'Izquierda_S{i+1}' for i in range(8)]
@@ -605,29 +638,38 @@ def handle_csv_upload(contents, filename, stored_data):
     return alerts, stored_data
 
 # ---------- Mostrar gráficos con los datos cargados ----------
-@callback(
-    Output('fig-ciclos', 'figure'), Output('fig-ciclos', 'style'),
-    Output('fig-fases', 'figure'),  Output('fig-fases', 'style'),
-    Output('fig-cop', 'figure'),    Output('fig-cop', 'style'),
-    Output('fig-aporte-izq', 'figure'), Output('fig-aporte-izq', 'style'),
-    Output('fig-aporte-der', 'figure'), Output('fig-aporte-der', 'style'),
-    Output('store-figs-cinetico', 'data'), 
-    Input('session-stored-cinetico', 'data'),
-    Input('tabs-cinetico', 'value'),
-    Input('patient-info', 'data'),
-    State('session-stored-cinetico', 'data')
-)
-def actualizar_graficos_cineticos(trigger, tab_value, patient_data, stored_data):
 
+
+@callback(
+    Output('fig-ciclos','figure'), Output('fig-ciclos','style'),
+    Output('fig-fases','figure'),  Output('fig-fases','style'),
+    Output('fig-cop','figure'),    Output('fig-cop','style'),
+    Output('fig-aporte-izq','figure'), Output('fig-aporte-izq','style'),
+    Output('fig-aporte-der','figure'), Output('fig-aporte-der','style'),
+    Output('store-figs-cinetico','data'),
+    Input('session-stored-cinetico','data'),
+    Input('tabs-cinetico','value'),
+    State('store-patient-info','data')
+)
+def actualizar_graficos_cineticos(stored_data, tab_value, patient_data):
+    
+    # Definir estilos primero
     style_hide = {'display': 'none'}
     style_show = {'display': 'block', 'width': '100%', 'height': '480px', 'margin': 'auto'}
-    style_cop  = {'display': 'block', 'width': '100%', 'height': '100%'}  # el Graph llena la card
-
+    style_cop  = {'display': 'block', 'width': '100%', 'height': '100%'}
+    
+    # Verificar qué input activó el callback
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    
+    # Solo procesar si estamos en la pestaña CSV y tenemos datos
+    if tab_value != 'tab-csv' or not stored_data:
+        return [go.Figure(), style_hide] * 5 + [no_update]
+    
     # 🔧 fallback de EXACTAMENTE 10 items (5 pares fig+style)
     fallback = [go.Figure(), style_hide] * 5 + [no_update]
 
-    if tab_value != 'tab-csv' or not stored_data:
-        return [go.Figure(), {'display': 'none'}] * 5 + [no_update]
     try:
         # Verificar que los datos tienen contenido válido
         if not stored_data.get('izq') or not stored_data.get('der'):
@@ -645,10 +687,8 @@ def actualizar_graficos_cineticos(trigger, tab_value, patient_data, stored_data)
         if df_izq.empty or df_der.empty:
             return fallback
     
-
         from analisis_plantillas import procesar_archivo_plantillas
         from generar_figuras_cinetico import generar_figuras_cinetico
-
 
         data_proc = procesar_archivo_plantillas(df_der, df_izq)
         
@@ -681,8 +721,6 @@ def actualizar_graficos_cineticos(trigger, tab_value, patient_data, stored_data)
                 if isinstance(valor[0], (pd.DataFrame, list, dict)):
                     data_proc[key] = valor[0]
        
-                    
-
         fig_ciclos, fig_fases, fig_cop, fig_aporte_izq, fig_aporte_der = generar_figuras_cinetico(data_proc)
  
         
@@ -716,13 +754,13 @@ def actualizar_graficos_cineticos(trigger, tab_value, patient_data, stored_data)
     Input('fig-fases', 'figure'),
     Input('fig-cop', 'figure'),
     Input('fig-aporte-izq', 'figure'),
-    Input('fig-aporte-der', 'figure'),
-    prevent_initial_call=True
+    Input('fig-aporte-der', 'figure')
 )
+
 def harvest_cinetico(fig_ciclos, fig_fases, fig_cop, fig_ap_izq, fig_ap_der):
     figs = [
         ("Ciclos detectados (vGRF por paso)", fig_ciclos),
-        ("vGRF normalizado – Detección de eventos y subfases", fig_fases),
+        ("vGRF normalizado – Detección de eventos và subfases", fig_fases),
         ("Trayectoria del Centro de Presión (COP)", fig_cop),
         ("Aporte porcentual por sensor – Pie Izquierdo", fig_ap_izq),
         ("Aporte porcentual por sensor – Pie Derecho", fig_ap_der),
@@ -744,9 +782,16 @@ def harvest_cinetico(fig_ciclos, fig_fases, fig_cop, fig_ap_izq, fig_ap_der):
     return payload or no_update
 
 
-
-
-
+@callback(
+    Output("__force_resize_token", "data"),
+    Input("sidebar-toggle", "n_clicks"),
+    Input("tabs-cinetico", "value"),
+    State("__force_resize_token", "data"),
+    prevent_initial_call=True
+)
+def force_resize(n_clicks, tab_value, token):
+    # This will trigger the clientside resize event through the store update
+    return (token or 0) + 1
 
 
 
