@@ -370,7 +370,7 @@ def generar_pdf(n_clicks, secciones, store_cinetico, store_cinematico,
         # Portada
         Story.append(Paragraph("Reporte: Análisis de Marcha", styles["AppTitle"]))
         fecha_hoy = datetime.date.today().strftime("%d/%m/%Y")
-        Story.append(Paragraph(f"Fecha: <b>{fecha_hoy}</b>", styles["Normal"]))
+        Story.append(Paragraph(f"Fecha: <b>{fecha_hoy}</b>", styles["AppText"]))
         
         if patient:
             nombre = (patient.get("nombre") or "—") if isinstance(patient, dict) else "—"
