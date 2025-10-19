@@ -218,7 +218,12 @@ app.validation_layout = html.Div([
     html.Div(id="parametros-container"),
     dcc.Store(id="stored-data"),
     dcc.Store(id="session-stored-data", storage_type="session"),
-    html.Div(id="tabs-container"),
+    # Contenedor con una Tabs placeholder para que el id exista siempre
+    html.Div(
+        id='tabs-container',
+        children=dcc.Tabs(id='tabs-cinetico', value='tab-1', children=[]),
+        style={'display': 'none'}
+    ),
     dcc.RadioItems(id="lado-dropdown"),
 
     # ---- Reporte (/reporte) ----
@@ -341,5 +346,5 @@ app.clientside_callback(
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="127.0.0.1", port=port, debug=True, use_reloader=False)
+    app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
 

@@ -676,10 +676,27 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
     }
 
     # Diccionario de títulos personalizados
+    # Diccionario de títulos personalizados (orden: [Z, X, Y] para secuencia ZXY)
     SUBTITULOS_EJES = {
-        "pelvis / pie": ["<b>Oblicuidad Pélvica</b>", "<b>Rotación Pélvica</b>", "<b>Progresión del Pie</b>"],
-        "default": ["<b>Flexión/Extensión (Z)</b>", "<b>Ángulos de Y</b>", "<b>Ángulos de X</b>"]
+        "tobillo": [
+            "<b>Dorsiflexión/Flexión plantar (Z)</b>",
+            "<b>Inversión/Eversión (X)</b>",
+            "<b>Rotación interna/externa (Y)</b>",
+        ],
+        "rodilla": [
+            "<b>Flexión/Extensión (Z)</b>",
+            "<b>Varo/Valgo (X)</b>",
+            "<b>Rotación interna/externa (Y)</b>",
+        ],
+        "cadera": [
+            "<b>Dorsiflexión/Flexión plantar (Z)</b>",
+            "<b>Abducción/Aducción (X)</b>",
+            "<b>Rotación interna/externa (Y)</b>",
+            
+        ],
+        "default": ["<b>Oblicuidad Pélvica </b>", "<b>Rotación Pélvica</b>", "<b>Progresión del Pie</b>"]
     }
+
 
     # Obtener títulos según la articulacións
     titulos = SUBTITULOS_EJES.get(articulacion.lower(), SUBTITULOS_EJES["default"])
@@ -770,9 +787,11 @@ def final_plot_plotly(curva_derecha=None, curva_izquierda=None, posibilidad="Der
             ), row=row, col=col)
 
         # Agregar trazos para cada eje
+        # Agregar trazos para cada eje (Z, X, Y)
+
         add_traces(1, 1, average_Z, std_Z, "Z")
-        add_traces(1, 2, average_Y, std_Y, "Y")
-        add_traces(1, 3, average_X, std_X, "X")
+        add_traces(1, 2, average_Y, std_X, "X")
+        add_traces(1, 3, average_X, std_Y, "Y")
 
     fig.update_layout(
         title_text=f"<b>Articulación de {articulacion.capitalize()}</b> - Ángulos por eje",
